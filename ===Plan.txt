@@ -1,0 +1,42 @@
+PHASE 0  Mindset (day 1)
+  Pick ONE business task as your capstone; every exercise builds toward it
+
+PHASE 1  Foundations (4-6 wks)
+  Python, Git basics, terminal, venv, Pandas + NumPy
+  Clone an open-source repo, run it, fix one small thing
+
+PHASE 2  Web & Data (4-6 wks)
+  REST APIs, FastAPI, SQL (SQLite/Postgres)
+  ETL pipeline: source -> clean -> store, re-runnable (no duplicates)
+
+PHASE 3  LLM Skills (3-4 wks)
+  API calls, system prompts, structured JSON, tool calling
+  Streaming (stream=True) vs non-streaming
+  Token/cost tracking from day 1
+  10 test prompts re-run after every change
+
+PHASE 4  RAG (5-6 wks)
+  Chunking, embeddings, FAISS/Chroma, BM25 hybrid
+  Reranker (optional: what it is, when to use it)
+  Eval set 30+ questions (retrieval + answer), then RAGAS
+
+PHASE 5  Agents (8-10 wks)
+  Hand-built loop: think -> act -> observe
+  Guardrails, step caps, human approval
+  Failure modes, one guardrail each:
+    infinite loops, fake tool calls, cost blowups, silent errors
+  Tracing: JSONL first, then LangSmith/Langfuse
+  Then LangGraph + MCP
+
+PHASE 6  Ship It (parallel from Phase 3)
+  Docker, cheap VPS, GitHub Actions
+  Secrets in .env, API budget limits, retries/fallbacks
+  n8n for business workflows (start early)
+
+CAPSTONE (4-6 wks, no new learning)
+  1-2 real systems for YOUR business
+  Problem -> Data -> Logic -> Deploy -> Monitor -> Measure ROI
+  One-page runbook each: what it does, deploy, rollback,
+  what to check when it breaks, monthly cost
+
+TOTAL: ~7-9 months of consistent effort

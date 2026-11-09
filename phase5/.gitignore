@@ -1,0 +1,10 @@
+.env
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+results/*.index
+results/*.npy
+workspace/agent_notes.txt
+workspace/outbox.jsonl
+traces/*.jsonl

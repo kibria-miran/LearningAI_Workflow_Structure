@@ -1,0 +1,19 @@
+================================================================
+PHASE 7 - WEEK 6: DOCUMENT + DECIDE
+Estimated time : 1-2 hrs/day
+Estimated cost : $0.00
+================================================================
+
+DAY 1-2  runbook.md: fill every section; a stranger could operate it.
+DAY 3    README.md: what it is, setup, how to run tests/eval, known limits.
+DAY 4    Explain it to a colleague in 5 minutes. Note where they got lost.
+DAY 5    DECIDE (write the reasoning): scale it / fix it / next system.
+DAY 6    Optional: second capstone using the same stack.
+
+PHASE 7 EXIT CHECKLIST
+  [ ] Runs on real business data, live
+  [ ] Eval score and cost per task tracked weekly
+  [ ] ROI number written down
+  [ ] Runbook exists; someone else could operate it
+  [ ] You can explain it to your team in 5 minutes
+================================================================

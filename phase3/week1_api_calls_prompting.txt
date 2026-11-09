@@ -1,0 +1,554 @@
+================================================================
+PHASE 3 - WEEK 1: API CALLS + PROMPTING
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.05 for the whole week
+================================================================
+
+GOAL: Make real API calls, understand the response fully, build
+      a multi-turn chatbot, and learn the 3 core prompting techniques.
+
+  pip install "openai>=1.40" python-dotenv
+
+  Why openai>=1.40? Week 3 streaming uses stream_options which
+  requires this version. Pin it now so nothing breaks later.
+
+  Add to every file from this week onward:
+    client = OpenAI(
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        base_url="https://api.deepseek.com",
+        timeout=30.0   # prevents scripts hanging forever on slow responses
+    )
+
+----------------------------------------------------------------
+DAY 1: API KEY IN .ENV + RAW REQUEST, PRINT REPLY
+Estimated: 45–60 min | Cost: <$0.001
+----------------------------------------------------------------
+
+CONCEPT:
+  Every LLM provider exposes an HTTP endpoint. You send a POST
+  request with your messages and settings, get a JSON response.
+  DeepSeek's API is OpenAI-compatible — the request/response
+  shape is identical to OpenAI. Skills transfer directly.
+
+  Flow: Your code -> HTTPS POST -> DeepSeek servers -> JSON response
+
+ANALOGY:
+  The API endpoint is a vending machine. You insert a coin
+  (API key for auth), press a button (your prompt), get a snack
+  (the reply). The machine doesn't care who you are as long as
+  the coin is valid.
+
+DEEPSEEK API DETAILS:
+  Base URL : https://api.deepseek.com
+  Endpoint : /v1/chat/completions
+  Auth     : Bearer token in Authorization header
+  Method   : POST
+
+REQUEST BODY:
+  {
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Your question"}]
+  }
+
+CODE:
+  # day1_raw_call.py
+  import requests, os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+
+  r = requests.post(
+      "https://api.deepseek.com/v1/chat/completions",
+      headers={"Authorization": f"Bearer {os.getenv('DEEPSEEK_API_KEY')}"},
+      json={
+          "model": "deepseek-chat",
+          "messages": [{"role": "user", "content": "Say hello in one sentence."}]
+      }
+  )
+  print(r.json())
+
+PREDICT BEFORE YOU RUN:
+  What key in the response dict will contain the reply text?
+  What HTTP status code do you expect?
+
+VERIFY:
+  Status 200. A large JSON dict with a "choices" key.
+
+IF YOU SEE {"error": ...}:
+  -> 401: API key is wrong or not loaded from .env
+  -> 429: Rate limit hit; wait 60 seconds and retry
+  -> 500: DeepSeek server error; retry after a minute
+
+IF YOU SEE A CONNECTION ERROR:
+  -> Check internet. Check that base_url has no trailing slash.
+
+EXPLAIN IT BACK:
+  "What is the Authorization header and why does it exist?"
+
+COMMIT: git add . && git commit -m "week1 d1: raw api call works"
+
+----------------------------------------------------------------
+DAY 2: READ THE RESPONSE + BRANCH ON FINISH_REASON
+Estimated: 60–90 min | Cost: <$0.002
+----------------------------------------------------------------
+
+CONCEPT:
+  The JSON response has a specific structure. You need to know
+  exactly where the reply text lives and why the model stopped.
+
+RESPONSE STRUCTURE:
+  {
+    "choices": [{
+      "message": {"role": "assistant", "content": "Hello!"},
+      "finish_reason": "stop"
+    }],
+    "usage": {
+      "prompt_tokens": 10,
+      "completion_tokens": 5,
+      "total_tokens": 15
+    }
+  }
+
+THE 4 FINISH_REASONS:
+
+  "stop"           -> Model finished naturally. Use the reply.
+
+  "length"         -> Hit max_tokens limit. Reply is INCOMPLETE.
+                      Don't use it as-is. Increase max_tokens
+                      or shorten your input.
+
+  "tool_calls"     -> Model wants to call a function you defined.
+                      Don't print the reply — execute the tool.
+                      (Week 4)
+
+  "content_filter" -> Provider blocked the response.
+                      Log it. Do NOT retry the same prompt.
+                      Retrying a blocked prompt wastes money.
+
+ANALOGY:
+  finish_reason is a delivery status.
+  "stop"          = delivered successfully
+  "length"        = package too big, only half delivered
+  "tool_calls"    = delivery needs your signature first
+  "content_filter"= package confiscated at customs
+
+WHY THIS MATTERS FOR SELLING THE SKILL:
+  Clients ask "why did the bot give a half-answer?"
+  You know: finish_reason was "length". You fix max_tokens.
+  That's the difference between someone who guesses and someone
+  who diagnoses.
+
+CODE:
+  # day2_read_response.py
+  from openai import OpenAI
+  import os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(
+      api_key=os.getenv("DEEPSEEK_API_KEY"),
+      base_url="https://api.deepseek.com",
+      timeout=30.0
+  )
+
+  def call_and_parse(prompt: str) -> None:
+      r = client.chat.completions.create(
+          model="deepseek-chat",
+          messages=[{"role": "user", "content": prompt}]
+      )
+      choice = r.choices[0]
+      reason = choice.finish_reason
+      usage  = r.usage
+
+      if reason == "stop":
+          print("Reply:", choice.message.content)
+      elif reason == "length":
+          print("WARNING: Reply cut off. Increase max_tokens.")
+          print("Partial:", choice.message.content)
+      elif reason == "tool_calls":
+          print("Model wants a tool:", choice.message.tool_calls)
+      elif reason == "content_filter":
+          print("BLOCKED by content filter. Do not retry this prompt.")
+
+      print(f"Tokens -> prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens}")
+
+  call_and_parse("Explain black holes in 3 sentences.")
+
+  # Force a "length" finish_reason to see it in action:
+  r2 = client.chat.completions.create(
+      model="deepseek-chat",
+      messages=[{"role": "user", "content": "Write a 500-word essay on the ocean."}],
+      max_tokens=10   # intentionally tiny
+  )
+  print("\nForced length test:", r2.choices[0].finish_reason)
+
+PREDICT BEFORE YOU RUN:
+  What finish_reason will the second call return?
+
+VERIFY:
+  First call: finish_reason "stop", reply printed.
+  Second call: finish_reason "length".
+
+IF BOTH RETURN "stop":
+  -> max_tokens=10 wasn't applied; check the parameter name.
+
+EXPLAIN IT BACK:
+  "What should your code do differently for each finish_reason?"
+
+COMMIT: git add . && git commit -m "week1 d2: response parsing + finish_reason branching"
+
+----------------------------------------------------------------
+DAY 3: TEMPERATURE, MAX_TOKENS, STOP SEQUENCES
+Estimated: 60 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  These 3 parameters control HOW the model generates text.
+
+TEMPERATURE (0.0 to 2.0):
+  Controls randomness.
+  0.0 = deterministic. Same prompt -> nearly same answer every time.
+        Use for: extraction, classification, structured output.
+  0.5 = balanced. Some variation, stays on topic.
+        Use for: summarization, Q&A.
+  1.0 = creative. More varied.
+        Use for: writing, brainstorming.
+  2.0 = chaotic. Rarely useful.
+
+  ANALOGY: A chef's creativity dial. At 0 they follow the recipe
+  exactly. At 1 they improvise a little. At 2 they put chocolate
+  on your pasta.
+
+MAX_TOKENS:
+  Hard limit on reply length.
+  1 token ≈ 0.75 words in English.
+  100 tokens ≈ 75 words ≈ a short paragraph.
+  Rule: set to 2–3x what you expect the answer to be.
+
+STOP SEQUENCES:
+  Strings that tell the model "stop when you write this."
+  stop=["###"] -> model stops when it outputs ###.
+  Useful for structured output with clean endings.
+
+CODE:
+  # day3_params.py
+  from openai import OpenAI
+  import os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  prompt = "Write a tagline for a coffee shop."
+
+  for temp in [0.0, 1.0]:
+      for run in range(2):
+          r = client.chat.completions.create(
+              model="deepseek-chat",
+              messages=[{"role": "user", "content": prompt}],
+              temperature=temp,
+              max_tokens=30
+          )
+          print(f"temp={temp} run={run+1}: {r.choices[0].message.content.strip()}")
+
+PREDICT BEFORE YOU RUN:
+  At temp=0, will both runs give the same output?
+  At temp=1, will both runs give the same output?
+
+VERIFY:
+  temp=0: both runs nearly identical.
+  temp=1: both runs different.
+
+IF temp=0 STILL GIVES DIFFERENT OUTPUTS:
+  -> Some models have a small amount of non-determinism even at 0.
+     This is normal. The outputs should be very similar, not identical.
+
+WRITE IN NOTES.MD:
+  "temp=0 experiment: [paste your 4 outputs]"
+  "Conclusion: [what you observed]"
+
+COMMIT: git add . && git commit -m "week1 d3: temperature experiment"
+
+----------------------------------------------------------------
+DAY 4: SYSTEM VS USER PROMPT + 3 ROLES
+Estimated: 60–90 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  Every message has a "role":
+
+  "system"    -> Instructions to the model. Sets persona,
+                 constraints, behavior. The model treats this
+                 as its operating manual. User doesn't see it.
+
+  "user"      -> What the human says.
+
+  "assistant" -> What the model replied. Used in multi-turn chat
+                 to give the model memory of what it said before.
+
+WHY SYSTEM PROMPTS ARE THE BUSINESS:
+  The same model with different system prompts behaves like
+  completely different products. A support agent, a code reviewer,
+  and a recipe generator can all be the same model.
+  That's how companies build custom AI assistants — they just
+  change the system prompt. This is the skill you're selling.
+
+ANALOGY:
+  System prompt = job description + employee handbook.
+  User message  = what the customer says.
+  The employee (model) follows the handbook while serving the customer.
+
+3 ROLES TO BUILD:
+
+  ROLE 1 — Support Agent:
+    "You are a customer support agent for a software company.
+     Be polite and concise. Always offer a clear next step.
+     Never invent features that don't exist.
+     If you don't know, say: 'Let me check and get back to you.'"
+
+  ROLE 2 — Summarizer:
+    "You are a text summarizer. When given any text, return ONLY
+     a bullet-point summary. No intro, no outro.
+     Maximum 5 bullets. Each bullet under 15 words."
+
+  ROLE 3 — Extractor:
+    "You are a data extractor. Extract structured information from
+     unstructured text. Return ONLY valid JSON. No explanation.
+     No code fences. Just the raw JSON object."
+
+CODE:
+  # day4_roles.py
+  from openai import OpenAI
+  import os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  def ask(system: str, user: str) -> str:
+      r = client.chat.completions.create(
+          model="deepseek-chat",
+          messages=[
+              {"role": "system", "content": system},
+              {"role": "user",   "content": user}
+          ]
+      )
+      return r.choices[0].message.content
+
+  support = "You are a customer support agent. Be polite and concise. Always offer a next step."
+  summarizer = "Summarize into max 5 bullet points. Each under 15 words. No intro."
+  extractor = "Extract structured data. Return ONLY valid JSON. No explanation. No code fences."
+
+  print(ask(support, "My account is locked and I can't log in."))
+  print("---")
+  print(ask(summarizer, "AI is transforming industries. Companies invest billions. Jobs are shifting. Regulation is coming."))
+  print("---")
+  print(ask(extractor, "Order #4521 placed by John on Dec 3rd for $45.99. Item: Blue Hoodie, Size L."))
+
+PREDICT BEFORE YOU RUN:
+  What format will the extractor return?
+  Will the summarizer add an intro sentence?
+
+VERIFY:
+  Each role behaves differently with the same underlying model.
+  Extractor returns JSON. If it adds explanation -> tighten the prompt.
+
+IF THE EXTRACTOR ADDS "Here is the JSON:" BEFORE THE OBJECT:
+  -> Add to system prompt: "Output starts with { and ends with }. Nothing else."
+
+EXPLAIN IT BACK:
+  "Why can the same model behave like 3 different products?"
+
+COMMIT: git add . && git commit -m "week1 d4: system prompts + 3 roles"
+
+----------------------------------------------------------------
+DAY 5: MULTI-TURN CLI CHATBOT
+Estimated: 60–90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  LLMs have NO memory between calls. Every call is stateless.
+  Multi-turn conversation works by sending the ENTIRE history
+  every time. You maintain the list in your code.
+
+  Call 1: messages = [system, user: "hi"]
+  Call 2: messages = [system, user: "hi", assistant: "hello!", user: "what's 2+2?"]
+  Call 3: messages = [system, user: "hi", assistant: "hello!", user: "what's 2+2?",
+                      assistant: "4", user: "why?"]
+
+ANALOGY:
+  Imagine amnesia after every sentence. The only way to have a
+  conversation is if someone reads you the entire transcript
+  before you reply each time. That's exactly what you're doing.
+
+COST IMPLICATION:
+  Every turn sends ALL previous messages. A 10-turn conversation
+  sends ~10x more tokens than a single question.
+  Long conversations = expensive. You'll track this in Week 2.
+
+CODE:
+  # day5_cli_chat.py  <- this becomes your Week 1 deliverable
+  from openai import OpenAI
+  import os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  SYSTEM_PROMPT = "You are a helpful assistant. Be concise."
+  messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+  print("Chat started. Type 'quit' to exit.\n")
+
+  while True:
+      user_input = input("You: ").strip()
+      if user_input.lower() == "quit":
+          break
+      if not user_input:
+          continue
+
+      messages.append({"role": "user", "content": user_input})
+
+      r = client.chat.completions.create(model="deepseek-chat", messages=messages)
+
+      reply = r.choices[0].message.content
+      messages.append({"role": "assistant", "content": reply})
+
+      print(f"Bot: {reply}\n")
+
+PREDICT BEFORE YOU RUN:
+  If you ask "What's 2+2?" then "Why?" — will the bot know
+  what "why" refers to?
+
+VERIFY:
+  Ask a question, then ask a follow-up referencing the first.
+  The bot should remember context.
+
+IF THE BOT DOESN'T REMEMBER CONTEXT:
+  -> messages list is being reset somewhere
+  -> Check that you're appending both user and assistant messages
+
+EXPLAIN IT BACK:
+  "How does the model 'remember' previous messages if it's stateless?"
+
+COMMIT: git add . && git commit -m "week1 d5: multi-turn chatbot"
+
+----------------------------------------------------------------
+DAY 6: FEW-SHOT, STEP-BY-STEP, EXPLICIT OUTPUT RULES
+Estimated: 60–90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  These are the 3 most powerful prompting techniques.
+
+TECHNIQUE 1 — FEW-SHOT:
+  Give the model examples of input -> output pairs before your
+  actual question. The model learns the pattern from examples.
+
+  ANALOGY: Showing a new employee 3 completed forms before asking
+  them to fill out the 4th. They copy the pattern.
+
+  WHEN TO USE: When instructions alone don't produce the right format.
+
+TECHNIQUE 2 — STEP-BY-STEP (CHAIN OF THOUGHT):
+  Ask the model to think through the problem before answering.
+  Dramatically improves accuracy on complex tasks.
+
+  ANALOGY: Asking someone to "show their work" on a math test.
+  Writing steps forces more careful thinking.
+
+  HOW TO TRIGGER: "Think step by step." or "First X, then Y, finally Z."
+  WHEN TO USE: Math, logic, multi-step reasoning, debugging.
+
+TECHNIQUE 3 — EXPLICIT OUTPUT RULES:
+  Tell the model EXACTLY what format you want. Be specific about:
+  - Format (JSON, bullets, numbered list, plain text)
+  - Length (under 100 words, exactly 3 bullets, one sentence)
+  - What to include AND what to exclude
+  - What to do if it can't answer
+
+  BAD:  "Summarize this article."
+  GOOD: "Summarize in exactly 3 bullet points. Each under 20 words.
+         Facts only, no opinions. If no facts: reply NO_FACTS_FOUND"
+
+CODE:
+  # day6_prompting.py
+  from openai import OpenAI
+  import os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  def ask(system: str, user: str) -> str:
+      r = client.chat.completions.create(
+          model="deepseek-chat",
+          messages=[{"role": "system", "content": system}, {"role": "user", "content": user}]
+      )
+      return r.choices[0].message.content
+
+  # Few-shot
+  few_shot = """Classify review sentiment. Reply with ONE word only: Positive, Negative, or Neutral.
+  Examples:
+  'Broke after one day.' -> Negative
+  'Works perfectly!' -> Positive
+  'It is okay I guess.' -> Neutral"""
+
+  print(ask(few_shot, "Best purchase I have ever made!"))
+  print(ask(few_shot, "Complete waste of money."))
+
+  # Step-by-step
+  cot = "Solve problems step by step. Show each step. Final answer on a new line starting with 'Answer:'"
+  print(ask(cot, "Apples cost $1.20 each. I buy 7 and pay with $10. How much change?"))
+
+  # Explicit output rules
+  rules = """Extract action items from meeting notes.
+  Format: numbered list. Each line: [Owner] - [Action] - [Deadline]
+  If no deadline: write 'No deadline'. Output ONLY the list."""
+  print(ask(rules, "Sarah updates the website by Friday. John calls the client. Mike reviews budget next week."))
+
+PREDICT BEFORE YOU RUN:
+  Will the few-shot classifier add any explanation, or just one word?
+
+VERIFY:
+  Few-shot: single word replies.
+  CoT: shows steps, then "Answer: $1.60"
+  Rules: numbered list, no intro sentence.
+
+IF FEW-SHOT ADDS EXPLANATION:
+  -> Add to system: "Reply with ONE word. No explanation. No punctuation."
+
+EXPLAIN IT BACK:
+  "When would you use few-shot instead of just writing better instructions?"
+
+COMMIT: git add . && git commit -m "week1 d6: few-shot, CoT, output rules"
+
+----------------------------------------------------------------
+DAY 7: REVIEW + UPDATE NOTES.MD
+Estimated: 30–45 min | Cost: $0
+----------------------------------------------------------------
+
+TASKS:
+  1. Re-read notes.md
+  2. Answer these in notes.md (your own words, no copy-paste):
+     - What does finish_reason "length" mean and how do you fix it?
+     - What's the difference between system and user prompt?
+     - When would you use temperature 0 vs 1?
+     - How does multi-turn memory actually work?
+     - What's the difference between few-shot and step-by-step?
+  3. Run all day scripts one more time to confirm they still work
+  4. Rename day5_cli_chat.py to cli_chat.py (your deliverable)
+
+WEEK 1 DELIVERABLE CHECKLIST:
+  [ ] cli_chat.py runs, accepts input, maintains conversation history
+  [ ] System prompt is set (not the default "helpful assistant")
+  [ ] finish_reason is checked and branched on (all 4 cases)
+  [ ] timeout=30.0 on every client
+  [ ] All 6 day scripts committed to git
+  [ ] notes.md updated with answers to the 5 questions above
+
+================================================================
+NEXT: week2_cost_tracking_tests.txt
+================================================================

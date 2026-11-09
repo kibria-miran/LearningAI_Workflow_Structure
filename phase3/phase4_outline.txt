@@ -1,0 +1,289 @@
+================================================================
+PHASE 4 OUTLINE — RAG, EMBEDDINGS, MULTI-AGENT, EVALS
+Provider : DeepSeek (chat + embeddings)
+Estimated time : 5–6 weeks
+Estimated cost : <$2.00 total
+================================================================
+
+PREREQUISITE: Phase 3 exit checklist complete.
+  tracker.py, run_tests.py, extractor.py, assistant.py all working.
+  You understand tool calling, structured output, and cost tracking.
+
+WHAT PHASE 4 ADDS:
+  Phase 3 gave the model access to your functions.
+  Phase 4 gives the model access to your documents and data.
+  It also teaches you to measure quality — not just "did it run"
+  but "was the answer actually good?"
+
+----------------------------------------------------------------
+WEEK 1: EMBEDDINGS — SEARCH BY MEANING
+Estimated: 1–2 hrs/day | Cost: <$0.05
+----------------------------------------------------------------
+
+GOAL: Turn text into vectors. Find similar text by meaning,
+      not by keyword matching.
+
+WHY THIS MATTERS:
+  Keyword search: "order status" finds "order status".
+  Semantic search: "where is my package" also finds "order status".
+  Embeddings power the second kind.
+
+CONCEPTS:
+  - What an embedding is (a list of ~1500 numbers representing meaning)
+  - Cosine similarity: how to measure "closeness" between two vectors
+  - Embedding model vs chat model: different endpoints, different pricing
+
+DELIVERABLE: embed_search.py
+  - Embeds a list of documents (strings) using DeepSeek embeddings API
+  - Given a query, returns the top-3 most similar documents
+  - Logs embedding API calls to usage.jsonl via tracker.py
+
+KEY CODE PATTERN:
+  from openai import OpenAI
+  client = OpenAI(api_key=..., base_url="https://api.deepseek.com")
+
+  def embed(text: str) -> list[float]:
+      r = client.embeddings.create(model="deepseek-embedder", input=text)
+      return r.data[0].embedding
+
+  def cosine_similarity(a: list, b: list) -> float:
+      dot = sum(x * y for x, y in zip(a, b))
+      mag_a = sum(x**2 for x in a) ** 0.5
+      mag_b = sum(x**2 for x in b) ** 0.5
+      return dot / (mag_a * mag_b) if mag_a and mag_b else 0.0
+
+EXIT CHECKLIST:
+  [ ] embed_search.py returns correct top-3 for 5 test queries
+  [ ] Embedding calls logged to usage.jsonl
+  [ ] You can explain cosine similarity without looking at notes
+
+----------------------------------------------------------------
+WEEK 2: VECTOR DATABASE — CHROMA (LOCAL, NO ACCOUNT NEEDED)
+Estimated: 1–2 hrs/day | Cost: <$0.05
+----------------------------------------------------------------
+
+GOAL: Store embeddings in a real vector DB. Query it at scale.
+      Chroma runs locally — no API key, no cloud account.
+
+WHY NOT JUST A LIST:
+  Week 1's approach works for 20 documents.
+  At 10,000 documents, linear scan is too slow.
+  A vector DB indexes embeddings for fast approximate search.
+
+  pip install chromadb
+
+CONCEPTS:
+  - Collection: a named group of documents + their embeddings
+  - Upsert: add or update a document by ID
+  - Query: find top-k nearest neighbors to a query embedding
+  - Persistence: Chroma can save to disk so you don't re-embed on restart
+
+DELIVERABLE: vector_store.py
+  - Wraps Chroma with add(id, text) and search(query, k=3) methods
+  - Persists to disk (chroma_db/ directory)
+  - Tested with 20+ documents
+
+EXIT CHECKLIST:
+  [ ] vector_store.py persists across restarts
+  [ ] search() returns correct results for 5 test queries
+  [ ] You can explain why a vector DB is faster than linear scan
+
+----------------------------------------------------------------
+WEEK 3: RAG — RETRIEVAL-AUGMENTED GENERATION
+Estimated: 1–2 hrs/day | Cost: <$0.10
+----------------------------------------------------------------
+
+GOAL: Give the model access to your documents at query time.
+      The model answers questions using retrieved context,
+      not just its training data.
+
+THE RAG PATTERN (memorize this):
+  1. User asks a question
+  2. Embed the question
+  3. Search vector store for top-k relevant chunks
+  4. Inject those chunks into the system prompt
+  5. Model answers using the retrieved context
+
+WHY "CHUNKS" NOT WHOLE DOCUMENTS:
+  A 50-page PDF won't fit in the context window.
+  You split it into ~500-token chunks and embed each one.
+  At query time, you retrieve only the relevant chunks.
+
+CONCEPTS:
+  - Chunking: splitting documents into fixed-size overlapping pieces
+  - Context window budget: retrieved chunks must fit alongside the question
+  - Hallucination vs grounding: model answers from context, not imagination
+  - Citation: model should say which chunk it used
+
+DELIVERABLE: rag_assistant.py
+  - Loads a set of documents (text files or strings)
+  - Chunks and embeds them into vector_store.py
+  - Given a user question, retrieves top-3 chunks and answers
+  - System prompt instructs model to answer ONLY from retrieved context
+  - If no relevant chunk found, model says "I don't have that information"
+
+EXIT CHECKLIST:
+  [ ] rag_assistant.py answers correctly from retrieved context
+  [ ] Model refuses to answer questions not covered by documents
+  [ ] Chunking tested: 500-token chunks with 50-token overlap
+  [ ] All calls logged via tracker.py
+
+----------------------------------------------------------------
+WEEK 4: MULTI-AGENT — SPECIALIST AGENTS THAT HAND OFF
+Estimated: 1–2 hrs/day | Cost: <$0.10
+----------------------------------------------------------------
+
+GOAL: Build a system where a coordinator agent delegates to
+      specialist agents. Each specialist has its own tools
+      and system prompt.
+
+WHY MULTI-AGENT:
+  One agent with 10 tools gets confused about which to use.
+  Three agents with 3 tools each are more reliable.
+  Specialization improves accuracy.
+
+THE PATTERN:
+  coordinator_agent
+    -> routes to: research_agent | support_agent | billing_agent
+    <- receives: structured result from specialist
+    -> synthesizes final answer
+
+CONCEPTS:
+  - Handoff: coordinator passes a task to a specialist
+  - Structured handoff: coordinator passes a Pydantic-validated task dict
+  - Result aggregation: coordinator combines specialist outputs
+  - Shared tracker: all agents log to the same usage.jsonl
+
+DELIVERABLE: multi_agent.py
+  - CoordinatorAgent: classifies the request, routes to specialist
+  - At least 2 specialist agents (e.g. LookupAgent, DraftAgent)
+  - Each specialist uses tracked_call with its own tools
+  - Final answer assembled by coordinator from specialist results
+
+EXIT CHECKLIST:
+  [ ] Coordinator correctly routes 5 test inputs to the right specialist
+  [ ] All agent calls logged to shared usage.jsonl
+  [ ] Total cost for a multi-agent run visible in one command
+
+----------------------------------------------------------------
+WEEK 5: EVALUATION HARNESS — LLM-AS-JUDGE
+Estimated: 1–2 hrs/day | Cost: <$0.20
+----------------------------------------------------------------
+
+GOAL: Automate quality measurement. Use a second LLM call to
+      judge whether the first LLM's answer was good.
+
+WHY THIS MATTERS:
+  run_tests.py checks exact strings and JSON structure.
+  It can't check: "Was this answer helpful? Accurate? Concise?"
+  An eval harness uses a judge model to score those dimensions.
+
+THE PATTERN:
+  1. Run your assistant on a set of test inputs
+  2. For each output, call the judge model:
+     "Rate this answer 1–5 for accuracy. Explain your rating."
+  3. Parse the judge's score
+  4. Aggregate scores across all inputs
+  5. Compare scores before/after a prompt change
+
+CONCEPTS:
+  - Judge prompt: the system prompt that tells the model how to score
+  - Rubric: the dimensions being scored (accuracy, helpfulness, conciseness)
+  - Score drift: how scores change when you change the system prompt
+  - Cost of evals: judge calls cost money — budget for them separately
+
+DELIVERABLE: eval_harness.py
+  - Runs assistant on 10 fixed test inputs
+  - For each output, calls judge model with a rubric
+  - Saves scores to results/eval_DATE.json
+  - Prints average score per dimension
+  - Compares to previous eval run if one exists
+
+JUDGE PROMPT TEMPLATE:
+  "You are an evaluator. Rate the following assistant response on:
+   - Accuracy (1–5): Is the information correct?
+   - Helpfulness (1–5): Does it address the user's need?
+   - Conciseness (1–5): Is it appropriately brief?
+   Return ONLY a JSON object: {\"accuracy\": N, \"helpfulness\": N, \"conciseness\": N, \"reason\": \"...\"}"
+
+EXIT CHECKLIST:
+  [ ] eval_harness.py runs on 10 inputs and saves scores
+  [ ] Scores are reproducible (same inputs -> similar scores)
+  [ ] You can show score improvement after a prompt change
+  [ ] Judge calls logged to usage.jsonl separately from assistant calls
+
+----------------------------------------------------------------
+WEEK 6 (OPTIONAL): ASYNC + DEPLOYMENT
+Estimated: 1–2 hrs/day | Cost: <$0.10
+----------------------------------------------------------------
+
+GOAL: Run 10 prompts in parallel. Wrap your assistant in a
+      FastAPI endpoint so non-technical users can call it.
+
+ASYNC PATTERN:
+  import asyncio
+  from openai import AsyncOpenAI
+
+  async def call(msg): ...
+  results = await asyncio.gather(*[call(m) for m in messages])
+
+FASTAPI PATTERN:
+  from fastapi import FastAPI
+  app = FastAPI()
+
+  @app.post("/ask")
+  async def ask(request: AskRequest) -> AskResponse:
+      result = await run_agent_async(request.message)
+      return AskResponse(**result)
+
+  uvicorn main:app --reload
+
+DELIVERABLE: api_server.py
+  - POST /ask -> runs assistant, returns structured JSON
+  - GET /health -> returns {"status": "ok", "daily_spent": X}
+  - All calls logged via tracker.py
+
+EXIT CHECKLIST:
+  [ ] 10 parallel calls complete faster than 10 sequential calls
+  [ ] /ask endpoint returns correct structured response
+  [ ] /health shows real spending from usage.jsonl
+
+----------------------------------------------------------------
+PHASE 4 CAPSTONE IDEAS
+----------------------------------------------------------------
+
+  IDEA 1 — DOCUMENT Q&A SYSTEM:
+    Input: a folder of PDF/text files + user question
+    RAG pipeline retrieves relevant chunks, model answers
+    Business value: internal knowledge base search
+
+  IDEA 2 — AUTOMATED EVAL PIPELINE:
+    Input: a set of prompts + expected behaviors
+    Runs assistant, judges outputs, emails score report
+    Business value: continuous quality monitoring
+
+  IDEA 3 — MULTI-AGENT SUPPORT SYSTEM:
+    Coordinator routes tickets to: billing, technical, shipping agents
+    Each agent has specialized tools and knowledge base
+    Business value: faster, more accurate support routing
+
+  IDEA 4 — RAG + STRUCTURED EXTRACTION:
+    Input: a corpus of contracts or invoices
+    Retrieves relevant sections, extracts structured data
+    Business value: contract review automation
+
+----------------------------------------------------------------
+PHASE 4 EXIT CHECKLIST
+----------------------------------------------------------------
+
+  [ ] Embeddings: can embed text and find similar documents
+  [ ] Vector DB: Chroma persists and queries correctly
+  [ ] RAG: model answers from retrieved context, refuses otherwise
+  [ ] Multi-agent: coordinator routes correctly to specialists
+  [ ] Eval harness: scores improve measurably after prompt changes
+  [ ] All calls logged: usage.jsonl covers every phase 4 call
+  [ ] Total Phase 4 cost calculated and noted
+
+================================================================
+PHASE 4 BEGINS AFTER PHASE 3 EXIT CHECKLIST IS COMPLETE.
+================================================================

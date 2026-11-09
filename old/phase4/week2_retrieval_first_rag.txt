@@ -1,0 +1,405 @@
+================================================================
+PHASE 4 - WEEK 2: RETRIEVAL + FIRST RAG
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.05 for the whole week
+================================================================
+
+GOAL: Build a working CLI Q&A tool that answers questions from
+      your documents, cites sources, handles multi-turn follow-ups,
+      and refuses when evidence is missing.
+
+DELIVERABLE: ask.py — CLI Q&A with sources.
+
+----------------------------------------------------------------
+DAY 1: TOP-K SIMILARITY SEARCH — PRINT CHUNKS + SCORES
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Retrieval is the "R" in RAG. Before the model sees anything,
+  you find the most relevant chunks from your index.
+
+  Top-K: return the K chunks with the highest similarity score.
+  K=3 to K=5 is typical. Too few = miss relevant info.
+  Too many = prompt gets too long, model gets confused.
+
+CODE:
+  # day1_retrieval.py
+  import faiss, json, numpy as np
+  from sentence_transformers import SentenceTransformer
+
+  model = SentenceTransformer("all-MiniLM-L6-v2")
+  index = faiss.read_index("phase4/results/faiss.index")
+  with open("phase4/results/chunks_metadata.json") as f:
+      chunks = json.load(f)
+
+  def retrieve(query: str, k: int = 5) -> list[dict]:
+      """Return top-k chunks most similar to query."""
+      vec = model.encode([query]).astype("float32")
+      faiss.normalize_L2(vec)
+      scores, indices = index.search(vec, k)
+      results = []
+      for score, idx in zip(scores[0], indices[0]):
+          if idx == -1:
+              continue
+          chunk = chunks[idx].copy()
+          chunk["score"] = float(score)
+          results.append(chunk)
+      return results
+
+  # Test with 3 queries
+  for query in [
+      "What is RAG?",
+      "How do n8n workflows work?",
+      "What are the benefits of agentic AI?"
+  ]:
+      print(f"\nQuery: {query}")
+      results = retrieve(query, k=3)
+      for r in results:
+          print(f"  {r['score']:.3f} | {r['source']} p{r['page']}")
+          print(f"  {r['text'][:120]}...")
+
+PREDICT BEFORE YOU RUN:
+  Which documents will appear for "What is RAG?"
+  Will scores be above 0.5 for relevant queries?
+
+VERIFY:
+  Relevant documents appear in top results.
+  Scores are higher for semantically related queries.
+
+COMMIT: git add . && git commit -m "week2 d1: top-k retrieval working"
+
+----------------------------------------------------------------
+DAY 2: FIRST RAG — ANSWER ONLY FROM CONTEXT
+Estimated: 60–90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  The RAG prompt has a strict rule: answer ONLY from the provided
+  context. If the answer isn't in the context, say "not found".
+
+  WHY THIS RULE IS CRITICAL:
+  Without it, the model will hallucinate answers from its training
+  data. The whole point of RAG is to ground answers in YOUR docs.
+  A model that ignores the context and answers from memory defeats
+  the purpose entirely.
+
+  THE RAG PROMPT PATTERN:
+    System: "Answer ONLY from the context below. If the answer
+             is not in the context, say: NOT_FOUND"
+    User:   "Context:\n[chunks]\n\nQuestion: [question]"
+
+CODE:
+  # day2_first_rag.py
+  from tracker import tracked_call
+  from day1_retrieval import retrieve
+
+  RAG_SYSTEM = """You are a document Q&A assistant.
+Answer the user's question using ONLY the context provided below.
+If the answer is not present in the context, respond with exactly: NOT_FOUND
+Do not use any knowledge outside the provided context.
+Do not make up information."""
+
+  def rag_answer(question: str, k: int = 4) -> dict:
+      chunks = retrieve(question, k=k)
+      context = "\n\n---\n\n".join(
+          f"[Source: {c['source']} p{c['page']}]\n{c['text']}"
+          for c in chunks
+      )
+      messages = [
+          {"role": "system", "content": RAG_SYSTEM},
+          {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
+      ]
+      result = tracked_call(messages)
+      return {
+          "answer": result["content"],
+          "sources": [{"source": c["source"], "page": c["page"], "score": c["score"]} for c in chunks],
+          "cost": result["cost"]
+      }
+
+  # Test
+  result = rag_answer("What is an n8n workflow?")
+  print("Answer:", result["answer"])
+  print("Sources:", result["sources"])
+  print(f"Cost: ${result['cost']:.6f}")
+
+  # Test with a question that has no answer in docs
+  result2 = rag_answer("What is the population of Mars?")
+  print("\nOut-of-scope answer:", result2["answer"])
+
+PREDICT BEFORE YOU RUN:
+  Will the out-of-scope question return NOT_FOUND?
+  Will the model ever add information not in the context?
+
+VERIFY:
+  In-scope question: answer uses content from the retrieved chunks.
+  Out-of-scope question: returns NOT_FOUND (or similar refusal).
+
+IF MODEL IGNORES CONTEXT AND ANSWERS FROM MEMORY:
+  -> Strengthen the system prompt: "You MUST NOT use any knowledge
+     outside the provided context. If unsure, say NOT_FOUND."
+
+COMMIT: git add . && git commit -m "week2 d2: first rag with context-only constraint"
+
+----------------------------------------------------------------
+DAY 3: CITATIONS — EVERY ANSWER LISTS SOURCE FILES
+Estimated: 60 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  Citations are what make RAG trustworthy. Without them, the user
+  has no way to verify the answer. With them, they can open the
+  source document and check.
+
+  Two citation approaches:
+  1. Inline: "According to [refund_policy.pdf p3], returns are..."
+  2. Footer: answer first, then "Sources: [file1 p2], [file2 p5]"
+
+  Footer is simpler to implement and parse. Use that.
+
+UPGRADE rag_answer() TO INCLUDE CITATIONS:
+  Modify the system prompt to always end with a "Sources:" section.
+  Parse the sources from the retrieved chunks (not from the model's
+  output — the model may hallucinate source names).
+
+  IMPORTANT: Always derive citations from the retrieved chunks,
+  not from what the model says. The model may invent file names.
+
+CODE ADDITION:
+  # In day3_citations.py — upgrade to ask.py pattern
+
+  def format_answer_with_citations(answer: str, chunks: list[dict]) -> str:
+      """Append source citations to the answer."""
+      if answer.strip() == "NOT_FOUND":
+          return "NOT_FOUND — no relevant information in the documents."
+      sources = []
+      seen = set()
+      for c in chunks:
+          key = f"{c['source']} p{c['page']}"
+          if key not in seen and c["score"] > 0.3:  # only cite relevant chunks
+              sources.append(key)
+              seen.add(key)
+      citation_block = "\n\nSources: " + " | ".join(sources) if sources else ""
+      return answer + citation_block
+
+PREDICT BEFORE YOU RUN:
+  What happens if all chunk scores are below 0.3?
+  Should you still cite them?
+
+VERIFY:
+  Every answer (except NOT_FOUND) ends with a Sources: line.
+  Source filenames match actual files in phase4/data/.
+
+COMMIT: git add . && git commit -m "week2 d3: citations added to every answer"
+
+----------------------------------------------------------------
+DAY 4: MULTI-TURN — REWRITE FOLLOW-UP QUESTIONS
+Estimated: 90 min | Cost: <$0.02
+----------------------------------------------------------------
+
+CONCEPT:
+  Follow-up questions often use pronouns or references that only
+  make sense in context.
+
+  Turn 1: "What is the refund policy?"
+  Turn 2: "How long does it take?"
+
+  "It" refers to the refund process. But if you embed "How long
+  does it take?" and search your index, you'll get irrelevant
+  results because "it" has no meaning without context.
+
+  SOLUTION: Query rewriting.
+  Before searching, ask the model to rewrite the follow-up into
+  a standalone question using the conversation history.
+
+  Turn 2 rewritten: "How long does the refund process take?"
+  Now the search finds the right chunks.
+
+CODE:
+  # day4_multiturn.py
+  from tracker import tracked_call
+  from day2_first_rag import rag_answer
+
+  REWRITE_SYSTEM = """You are a query rewriter.
+Given a conversation history and a follow-up question, rewrite the
+follow-up into a standalone question that can be understood without
+the conversation history. Output ONLY the rewritten question. No explanation."""
+
+  def rewrite_query(history: list[dict], follow_up: str) -> str:
+      """Rewrite a follow-up question into a standalone query."""
+      history_text = "\n".join(
+          f"{m['role'].upper()}: {m['content']}" for m in history[-4:]  # last 2 turns
+      )
+      messages = [
+          {"role": "system", "content": REWRITE_SYSTEM},
+          {"role": "user", "content": f"History:\n{history_text}\n\nFollow-up: {follow_up}"}
+      ]
+      result = tracked_call(messages)
+      return result["content"].strip()
+
+  # Multi-turn session
+  history = []
+  questions = [
+      "What is an n8n workflow?",
+      "How do you trigger one?",       # follow-up: "one" = n8n workflow
+      "What about scheduling them?"    # follow-up: "them" = n8n workflows
+  ]
+
+  for q in questions:
+      if history:
+          standalone = rewrite_query(history, q)
+          print(f"Original:  {q}")
+          print(f"Rewritten: {standalone}")
+      else:
+          standalone = q
+
+      result = rag_answer(standalone)
+      print(f"Answer: {result['answer'][:200]}\n")
+
+      history.append({"role": "user", "content": q})
+      history.append({"role": "assistant", "content": result["answer"]})
+
+PREDICT BEFORE YOU RUN:
+  What will "How do you trigger one?" be rewritten to?
+  Will the rewritten query retrieve better results?
+
+VERIFY:
+  Follow-up questions are rewritten to include the topic.
+  Rewritten queries retrieve more relevant chunks.
+
+COMMIT: git add . && git commit -m "week2 d4: multi-turn with query rewriting"
+
+----------------------------------------------------------------
+DAY 5: STREAMING ANSWERS + USAGE LOGGING
+Estimated: 60 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  RAG answers can be long. Streaming makes them feel faster.
+  Reuse tracked_stream() from Phase 3 tracker.py.
+
+  The only change: pass the RAG context in the messages, same
+  as tracked_call. tracked_stream handles the rest.
+
+CODE ADDITION:
+  # In ask.py — add streaming option
+
+  from tracker import tracked_stream  # from Phase 3
+
+  def rag_answer_stream(question: str, k: int = 4) -> dict:
+      chunks = retrieve(question, k=k)
+      context = "\n\n---\n\n".join(
+          f"[Source: {c['source']} p{c['page']}]\n{c['text']}"
+          for c in chunks
+      )
+      messages = [
+          {"role": "system", "content": RAG_SYSTEM},
+          {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
+      ]
+      result = tracked_stream(messages, print_live=True)
+      return {
+          "answer": result["content"],
+          "sources": [{"source": c["source"], "page": c["page"]} for c in chunks],
+          "cost": result["cost"]
+      }
+
+VERIFY:
+  Answer streams token by token.
+  Usage logged to results/usage.jsonl.
+
+COMMIT: git add . && git commit -m "week2 d5: streaming rag answers"
+
+----------------------------------------------------------------
+DAY 6: REFUSAL GUARDRAIL — LOW SCORE = NO LLM CALL
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  If the top retrieved chunk has a very low similarity score,
+  the question is probably not answerable from your documents.
+  Don't waste money on an LLM call — refuse immediately.
+
+  This is a pre-LLM guardrail. It saves cost AND prevents the
+  model from hallucinating answers to questions your docs don't cover.
+
+  THRESHOLD: 0.3 is a reasonable starting point.
+  Tune it after running your eval set in Week 3.
+
+CODE ADDITION:
+  # In ask.py
+
+  SIMILARITY_THRESHOLD = 0.3
+
+  def rag_answer_with_guardrail(question: str, k: int = 4) -> dict:
+      chunks = retrieve(question, k=k)
+      top_score = chunks[0]["score"] if chunks else 0.0
+
+      if top_score < SIMILARITY_THRESHOLD:
+          return {
+              "answer": "I don't have relevant information in my documents to answer this question.",
+              "sources": [],
+              "cost": 0.0,
+              "refused": True,
+              "top_score": top_score
+          }
+
+      # Proceed with LLM call only if evidence exists
+      context = "\n\n---\n\n".join(
+          f"[Source: {c['source']} p{c['page']}]\n{c['text']}"
+          for c in chunks
+      )
+      messages = [
+          {"role": "system", "content": RAG_SYSTEM},
+          {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"}
+      ]
+      result = tracked_call(messages)
+      return {
+          "answer": result["content"],
+          "sources": [{"source": c["source"], "page": c["page"], "score": c["score"]} for c in chunks],
+          "cost": result["cost"],
+          "refused": False,
+          "top_score": top_score
+      }
+
+PREDICT BEFORE YOU RUN:
+  What score will "What is the weather on Mars?" get?
+  Will it trigger the guardrail?
+
+VERIFY:
+  Out-of-domain questions are refused without an LLM call.
+  cost=0.0 for refused questions.
+
+WRITE IN NOTES.MD:
+  "Guardrail threshold: 0.3"
+  "Test questions that triggered refusal: [list 3]"
+  "Test questions that passed: [list 3]"
+
+COMMIT: git add . && git commit -m "week2 d6: refusal guardrail on low similarity score"
+
+----------------------------------------------------------------
+DAY 7: BUILD ask.py DELIVERABLE
+Estimated: 90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+ask.py REQUIREMENTS:
+  [ ] CLI loop: user types question, gets answer + sources
+  [ ] Multi-turn: follow-up questions are rewritten
+  [ ] Streaming output
+  [ ] Refusal guardrail (no LLM call if top score < threshold)
+  [ ] Citations on every answer
+  [ ] Cost shown after each answer
+  [ ] Type 'quit' to exit
+
+WEEK 2 DELIVERABLE CHECKLIST:
+  [ ] ask.py runs as a CLI Q&A tool
+  [ ] Answers cite source files and page numbers
+  [ ] Follow-up questions work correctly (query rewriting)
+  [ ] Low-relevance questions are refused without LLM call
+  [ ] All calls logged via tracker.py
+  [ ] notes.md updated with threshold tuning notes
+
+================================================================
+NEXT: week3_eval_set.txt
+================================================================

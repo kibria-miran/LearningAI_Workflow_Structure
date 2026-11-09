@@ -1,0 +1,12 @@
+{
+  "embedding_model": "all-MiniLM-L6-v2",
+  "llm_provider": "deepseek",
+  "llm_model": "deepseek-chat",
+  "chunk_size": 800,
+  "chunk_overlap": 100,
+  "similarity_threshold": 0.3,
+  "max_steps": 8,
+  "per_run_budget_usd": 0.05,
+  "monthly_budget_usd": 10.0,
+  "daily_alert_usd": 1.0
+}

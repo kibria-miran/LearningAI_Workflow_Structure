@@ -1,0 +1,326 @@
+================================================================
+PHASE 3 - WEEK 0 GATE
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 2–3 days, 1–2 hrs/day
+Estimated cost : $0.00 (no API calls this week)
+================================================================
+
+GOAL: Pass all 5 checkpoints before moving to Week 1.
+
+Before anything else — set up your project:
+
+  mkdir -p phase3/{config,results,tests}
+  cd phase3
+  touch .env .env.example notes.md
+
+Your .gitignore (create this file now, before any commits):
+  .env
+  __pycache__/
+  *.pyc
+  .DS_Store
+  venv/
+
+Your .env.example (commit this — documents required variables):
+  DEEPSEEK_API_KEY=your_key_here
+
+Your .env (never commit this):
+  DEEPSEEK_API_KEY=sk-your-actual-key
+
+CRITICAL — verify your key was never accidentally committed:
+  git log -p | grep -iE "(sk-|api[_-]?key|secret|token)" | head
+  If anything shows up, rotate the key at platform.deepseek.com immediately.
+
+VIRTUAL ENVIRONMENT SETUP:
+  Why: On Arch/Debian, pip install to system Python is blocked (PEP 668).
+  venv sidesteps this and keeps your project isolated.
+
+  # Linux/Mac:
+  python3 -m venv venv          # use python3 explicitly on Linux
+  source venv/bin/activate
+
+  # Windows (Command Prompt):
+  python -m venv venv
+  venv\Scripts\activate.bat
+
+  # Debian/Ubuntu — if python3 -m venv fails:
+  sudo apt install python3-venv
+  python3 -m venv venv
+
+  After activating, your prompt shows (venv). Do this every session.
+
+----------------------------------------------------------------
+CHECKPOINT 1: Load .env with python-dotenv
+----------------------------------------------------------------
+
+CONCEPT:
+  You never hardcode secrets in code. If your API key is in a
+  .py file and you push to GitHub, bots scan for keys within
+  minutes and drain your credits. .env keeps the key out of
+  your code entirely. python-dotenv reads that file and puts
+  values into os.environ at runtime.
+
+ANALOGY:
+  .env is a locker. Your code has the locker number (variable
+  name), but the actual key (value) lives in the locker — not
+  written on the wall for everyone to see.
+
+  pip install python-dotenv
+
+CODE:
+  # load_env_test.py
+  from dotenv import load_dotenv
+  import os
+
+  load_dotenv()
+
+  key = os.getenv("DEEPSEEK_API_KEY")
+  print("Key loaded:", key[:8] + "..." if key else "NOT FOUND")
+
+PREDICT BEFORE YOU RUN:
+  What will print if .env exists and has the key?
+  What will print if .env is missing?
+
+VERIFY:
+  You should see: Key loaded: sk-xxxxx...
+
+IF YOU SEE "NOT FOUND":
+  -> .env file doesn't exist, or it's in the wrong directory
+  -> Key name in .env doesn't match os.getenv("DEEPSEEK_API_KEY")
+  -> Spaces around = in .env: WRONG: KEY = value  RIGHT: KEY=value
+
+EXPLAIN IT BACK:
+  "Why do we use .env instead of putting the key in the code?"
+
+COMMIT:
+  git add .gitignore .env.example notes.md load_env_test.py
+  git commit -m "week0 cp1: env loading works"
+
+----------------------------------------------------------------
+CHECKPOINT 2: requests.get/post, print JSON
+----------------------------------------------------------------
+
+CONCEPT:
+  APIs communicate over HTTP. You send a request, get a response.
+  GET  = fetch data (no body sent)
+  POST = send data + get response (all LLM APIs use POST)
+  JSON = the format both sides speak in (like a Python dict)
+
+ANALOGY:
+  POST is like ordering at a restaurant. You send your order
+  (request body) -> kitchen processes it -> you get food.
+  GET is like asking "what's on the menu?" — you just fetch.
+
+  pip install requests
+
+CODE:
+  # requests_test.py
+  import requests, json
+
+  r = requests.get("https://httpbin.org/get")
+  print("Status:", r.status_code)
+  print("JSON:", json.dumps(r.json(), indent=2))
+
+  r = requests.post("https://httpbin.org/post", json={"message": "hello"})
+  print("Posted data echoed back:", r.json()["json"])
+
+PREDICT BEFORE YOU RUN:
+  What status code do you expect?
+  What will r.json()["json"] contain?
+
+VERIFY:
+  Status: 200. Your dict echoed back.
+
+IF YOU SEE A CONNECTION ERROR:
+  -> Check internet. httpbin.org is occasionally down; retry in a minute.
+
+IF YOU SEE STATUS 400:
+  -> Your request body is malformed.
+
+KEY CONCEPTS:
+  r.status_code  -> 200=OK, 401=bad key, 429=rate limit, 500=server error
+  r.json()       -> parses JSON body into Python dict
+  r.text         -> raw string (use when r.json() raises)
+
+EXPLAIN IT BACK:
+  "What is the difference between GET and POST?"
+
+COMMIT: git add requests_test.py && git commit -m "week0 cp2: requests tested"
+
+----------------------------------------------------------------
+CHECKPOINT 3: Write a function (dict in, dict out, docstring)
+----------------------------------------------------------------
+
+CONCEPT:
+  Every LLM helper you write follows this pattern:
+  - Takes a dict
+  - Returns a dict with at minimum: success (bool) + error (str|None)
+  - Has a docstring
+
+  This makes testing and logging trivial. A function that always
+  returns a dict never surprises you.
+
+CODE:
+  # function_test.py
+
+  def process_message(payload: dict) -> dict:
+      """
+      Process a chat message payload.
+
+      Args:
+          payload: dict with keys 'role' (str) and 'content' (str)
+
+      Returns:
+          dict with success (bool), word_count (int), preview (str), error (str|None)
+      """
+      try:
+          content = payload["content"]
+          return {
+              "success": True,
+              "word_count": len(content.split()),
+              "preview": content[:50],
+              "error": None
+          }
+      except KeyError as e:
+          return {"success": False, "word_count": 0, "preview": "", "error": f"Missing key: {e}"}
+
+
+  print(process_message({"role": "user", "content": "Hello, how are you today?"}))
+  print(process_message({"role": "user"}))  # missing content
+
+PREDICT BEFORE YOU RUN:
+  What will the second call return?
+
+VERIFY:
+  First:  success=True, word_count=5
+  Second: success=False, error="Missing key: 'content'"
+
+EXPLAIN IT BACK:
+  "Why does every function return a dict with a 'success' key?"
+
+COMMIT: git add function_test.py && git commit -m "week0 cp3: dict-in dict-out pattern"
+
+----------------------------------------------------------------
+CHECKPOINT 4: git add / commit / push without looking it up
+----------------------------------------------------------------
+
+CONCEPT:
+  Git is your safety net. Three commands cover 90% of daily use.
+
+ANALOGY:
+  git add    = put files in a box
+  git commit = seal the box with a label
+  git push   = ship the box to the warehouse (GitHub)
+
+SETUP (one time):
+  git init
+  git remote add origin https://github.com/YOUR_USERNAME/phase3.git
+  git push -u origin main
+
+DAILY WORKFLOW (memorize this):
+  git add .
+  git commit -m "week0: loaded env and tested requests"
+  git push origin main
+
+VERIFY .gitignore IS WORKING:
+  git status
+  -> .env must NOT appear
+  -> venv/ must NOT appear
+
+IF .env APPEARS IN git status:
+  -> Run: echo ".env" >> .gitignore
+
+COMMANDS TO KNOW:
+  git status          -> what changed?
+  git log --oneline   -> history of commits
+  git diff            -> what exactly changed?
+
+EXPLAIN IT BACK:
+  "What happens if you commit .env by accident?"
+
+----------------------------------------------------------------
+CHECKPOINT 5: Explain sync vs async in one sentence
+----------------------------------------------------------------
+
+CONCEPT:
+  Sync  = do one thing, wait for it to finish, then do the next.
+  Async = start a task, don't wait, come back when it's done.
+
+THE ONE SENTENCE (write this in notes.md):
+  "Sync waits for each task to finish before starting the next;
+   async starts tasks and handles results as they arrive."
+
+ANALOGY:
+  Sync  = you call a restaurant, stay on hold until they answer.
+  Async = you leave a voicemail and go do other things until
+          they call you back.
+
+WHY IT MATTERS:
+  LLM API calls take 1–10 seconds each.
+  10 calls sync  = 10–100 seconds total.
+  10 calls async = ~10 seconds total.
+  Weeks 1–4 use sync only. Async is Phase 4+.
+
+CODE (read only — don't run yet):
+  # SYNC
+  import time
+  def slow(name): time.sleep(1); return f"{name} done"
+  results = [slow("A"), slow("B")]  # 2 seconds
+
+  # ASYNC
+  import asyncio
+  async def slow_async(name): await asyncio.sleep(1); return f"{name} done"
+  async def main(): return await asyncio.gather(slow_async("A"), slow_async("B"))
+  asyncio.run(main())  # ~1 second
+
+EXPLAIN IT BACK:
+  "Why would you use async for LLM calls?"
+
+----------------------------------------------------------------
+NOTES.MD ENTRY (copy this into your notes.md now)
+----------------------------------------------------------------
+
+  # Phase 3 Notes
+
+  ## Provider & Model
+  Provider : DeepSeek
+  Model    : deepseek-chat
+  API Base : https://api.deepseek.com
+
+  NOTE on model pinning: DeepSeek uses rolling aliases (deepseek-chat
+  points to their latest stable model). They do not currently expose
+  dated snapshots publicly. tracker.py logs the model string on every
+  call. If DeepSeek releases pinned versions, update this note and pin.
+
+  ## Week 0 Gate
+  - [ ] .env loaded with python-dotenv
+  - [ ] requests GET/POST tested
+  - [ ] dict-in dict-out function written
+  - [ ] git workflow memorized
+  - [ ] sync vs async: one sentence written
+  - [ ] git log -p | grep -iE "(sk-|api[_-]?key|secret|token)" | head returns nothing
+
+  ## Key Reminders
+  - Never commit .env
+  - Activate venv before every session: source venv/bin/activate
+  - Budget cap on from Day 1 of Week 2
+  - Commit after every working checkpoint
+
+----------------------------------------------------------------
+WEEK 0 GATE — PASS CRITERIA
+----------------------------------------------------------------
+
+You pass when you can do ALL of these without googling:
+
+  1. Create .env, load it, print the key (masked)
+  2. Make a POST request and print the JSON response
+  3. Write a function: dict in, dict out, with docstring
+  4. Run: git add . && git commit -m "msg" && git push
+  5. Say sync vs async in one sentence from memory
+  6. git log -p | grep -iE "(sk-|api[_-]?key|secret|token)" | head returns nothing
+
+Once all 6 are done -> move to Week 1 Day 1.
+
+================================================================
+NEXT: week1_api_calls_prompting.txt
+================================================================

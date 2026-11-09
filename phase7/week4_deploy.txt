@@ -1,0 +1,18 @@
+================================================================
+PHASE 7 - WEEK 4: DEPLOY + PILOT
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : VPS ~$5-6/month + API
+================================================================
+
+GOAL: Live on a server, used on real work, a human checks everything.
+
+DAY 1-2  Docker image, VPS, HTTPS, secrets in server .env (Phase 6 Stages B-C).
+DAY 3    CI/CD: push -> tests -> deploy. Backups + one restore test.
+DAY 4    Tag a release (v1.0.0), keep the previous image for rollback.
+DAY 5-6  PILOT: a human reviews EVERY output at first. Log: accepted,
+         edited, rejected. Do not skip this review in week 1 of pilot.
+
+EXIT WHEN:
+  [ ] https://your-domain/health ok   [ ] rollback rehearsed
+  [ ] pilot running with human review
+================================================================

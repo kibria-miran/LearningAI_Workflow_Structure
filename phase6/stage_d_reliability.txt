@@ -1,0 +1,38 @@
+================================================================
+PHASE 6 - STAGE D: RELIABILITY
+Estimated time : 4-6 hrs total
+Estimated cost : <$0.20
+================================================================
+
+GOAL: When the provider, the disk or the server misbehaves, you
+      know quickly and the app degrades gracefully.
+
+CHECKPOINT 1: RETRIES + TIMEOUTS + FALLBACK
+  Every network call: timeout (e.g. 30 s). Retry only transient errors
+  (429, 5xx, timeouts) with exponential back-off + jitter, max 3 tries.
+  Never retry content_filter or 4xx auth errors.
+  Fallback: second model/provider if the first fails after retries.
+  PROVE IT: set a wrong base_url (or block the host) and watch the
+  fallback run. Untested fallbacks do not work.
+
+CHECKPOINT 2: HEALTH + RESTART + LOGS
+  /health exists (provided). compose has healthcheck + restart policy.
+  Log rotation (compose service option):
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+CHECKPOINT 3: BACKUPS (and a restore test)
+  Back up: phase4/data, results volume, n8n_data volume, .env (encrypted).
+  Example:
+    docker run --rm -v n8n_data:/d -v $PWD:/b alpine tar czf /b/n8n-$(date +%F).tgz -C /d .
+  Copy off the server. A backup you never restored is a hope.
+  TEST: restore into a fresh folder/volume, confirm n8n workflows exist.
+
+CHECKPOINT 4: MONITORING
+  Uptime check on /health (UptimeRobot or similar) -> alert to your phone.
+  Error alert: n8n workflow sends a message when /query returns 5xx.
+  Cost dashboard: sum results/usage.jsonl per day (small script).
+
+EXIT WHEN:
+  [ ] fallback proven by killing the provider   [ ] restart policy works
+  [ ] one restore test done                     [ ] uptime alert tested
+================================================================

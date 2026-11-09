@@ -1,0 +1,12 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.5
+python-dotenv>=1.0
+openai>=1.40
+requests
+numpy
+faiss-cpu
+sentence-transformers
+pypdf
+rank-bm25
+pyyaml

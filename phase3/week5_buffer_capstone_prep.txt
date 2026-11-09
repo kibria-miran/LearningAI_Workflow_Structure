@@ -1,0 +1,308 @@
+================================================================
+PHASE 3 - WEEK 5: BUFFER + CAPSTONE PREP
+Provider : DeepSeek
+Model    : deepseek-chat
+================================================================
+
+This week has two paths. Take the one that fits where you are.
+
+----------------------------------------------------------------
+PATH A: YOU'RE BEHIND
+Use this if any deliverable is incomplete.
+----------------------------------------------------------------
+
+PRIORITY ORDER — finish in this sequence:
+
+  1. cli_chat.py (Week 1)
+     Must have: system prompt, multi-turn memory, finish_reason branching
+
+  2. tracker.py + run_tests.py (Week 2)
+     Must have: every call logged with cost, budget cap, 10 tests in one command
+
+  3. extractor.py (Week 3)
+     Must have: validated JSON, retry on failure, 5 tests pass
+
+  4. assistant.py (Week 4)
+     Must have: 3 tools, loop with cap, safe_execute, approval gate
+
+For each incomplete deliverable:
+  - Re-read the relevant week's .txt file
+  - Build it from scratch (don't copy-paste)
+  - Run it, break it, fix it
+  - Add it to run_tests.py assertions
+  - Commit when it works
+
+----------------------------------------------------------------
+PATH B: YOU'RE ON TRACK — CAPSTONE
+----------------------------------------------------------------
+
+WHAT IS THE CAPSTONE?
+  A single, complete, real-world AI assistant that demonstrates
+  everything from Phase 3. This is what you show to clients or
+  employers. It's your proof of skill.
+
+CAPSTONE REQUIREMENTS:
+  [ ] Solves a real business problem (not a toy example)
+  [ ] System prompt defines a clear, specific role
+  [ ] All API calls logged with cost via tracker.py
+  [ ] At least 2 tools with proper error handling
+  [ ] Returns structured output (validated JSON) somewhere
+  [ ] Test suite: 10+ assertions pass in one command
+  [ ] Budget cap active
+  [ ] Human approval for at least one risky action
+  [ ] README.md explains what it does and how to run it
+
+CAPSTONE IDEAS (pick one):
+
+  IDEA 1 — INVOICE PROCESSOR:
+    Input: raw invoice text (email or paste)
+    Tools: extract_invoice_data, lookup_vendor, flag_duplicate
+    Output: structured JSON + approval to log it
+    Business value: replaces manual data entry for accounting
+
+  IDEA 2 — SUPPORT TICKET ROUTER:
+    Input: customer message
+    Tools: classify_issue, lookup_customer, draft_response
+    Output: category + drafted reply (with approval to send)
+    Business value: faster support, consistent responses
+
+  IDEA 3 — PRODUCT RESEARCH ASSISTANT:
+    Input: product name or category
+    Tools: search_products, get_pricing, compare_features
+    Output: structured comparison + recommendation
+    Business value: helps sales teams answer customer questions
+
+  IDEA 4 — MEETING NOTES PROCESSOR:
+    Input: raw meeting notes text
+    Tools: extract_action_items, assign_owners, set_deadlines
+    Output: structured action list + draft follow-up email
+    Business value: saves 30 min per meeting for every team
+
+HOW TO PICK:
+  Pick the one closest to a real problem you've seen.
+  "I built this because X company had this problem" is more
+  convincing to a client than "I built this as an exercise."
+
+----------------------------------------------------------------
+CAPSTONE BUILD PLAN (5–7 days)
+----------------------------------------------------------------
+
+DAY 1–2: DESIGN (no code yet)
+  Copy this template into notes.md and fill it in completely.
+  Bad design = rewriting code 3 times. Design first.
+
+  ---
+  ## Capstone Design
+
+  ### Problem
+  [One sentence: what real problem does this solve?]
+
+  ### User
+  [Who uses this? e.g. "A support agent who handles 50 tickets/day"]
+
+  ### Input
+  [What goes in? e.g. "Raw customer email text, pasted into CLI"]
+
+  ### Output
+  [What comes out? Define the schema:]
+    {
+      "field_1": "type",
+      "field_2": "type"
+    }
+
+  ### Tools
+  - name: description (when to use it, when NOT to use it)
+  - name: description
+  - name: description
+
+  ### Structured data (Pydantic model)
+  [List the fields and types your extractor or final output will validate]
+
+  ### Risky actions (need human approval)
+  - [tool name]: [why it's risky]
+
+  ### 10 test cases
+  1. Input: "..." | Expected: [check_type + expected value]
+  2. ...
+  ---
+
+DAY 3–4: BUILD CORE
+  - System prompt
+  - Tool definitions + implementations
+  - Agent loop (from assistant.py pattern)
+  - Structured output with Pydantic validation
+
+  Test manually as you go. Don't wait until the end.
+
+DAY 5: ADD SAFETY + LOGGING
+  - tracker.py integrated (every call logged)
+  - Budget cap set
+  - Human approval for risky tools
+  - safe_execute for all tool failures
+
+DAY 6: TEST SUITE
+  - Write 10 assertions in assertions.json
+  - python run_tests.py -> all pass
+  - Save a baseline result file
+
+DAY 7: POLISH + README
+  Write README.md with:
+  - What it does (2–3 sentences)
+  - Setup: pip install, .env setup
+  - How to run it (one command)
+  - Example input/output
+  - Approximate cost per run
+
+----------------------------------------------------------------
+CAPSTONE SELF-ASSESSMENT RUBRIC
+----------------------------------------------------------------
+
+Score yourself 1–5 on each dimension after you finish.
+Be honest. This is for you, not for anyone else.
+
+  BUSINESS VALUE (1–5):
+    1 = toy example with no real use case
+    3 = solves a real problem but narrowly
+    5 = a client would pay for this today
+
+  TOOL DESIGN (1–5):
+    1 = tools are vague, model picks wrong ones
+    3 = tools work but descriptions could be clearer
+    5 = descriptions are specific, model always picks correctly
+
+  ERROR HANDLING (1–5):
+    1 = crashes on bad input
+    3 = handles errors but doesn't recover gracefully
+    5 = all 3 error types handled, model self-corrects
+
+  TEST COVERAGE (1–5):
+    1 = fewer than 5 tests
+    3 = 10 tests, most pass
+    5 = 10+ tests all pass, evals reviewed weekly
+        (for a 5: also open evals.json and record last_reviewed
+        + last_result for each entry — not just run_tests.py)
+
+  README QUALITY (1–5):
+    1 = no README
+    3 = README exists but incomplete
+    5 = a stranger could set it up and run it in 5 minutes
+
+  TARGET: 3+ on all dimensions before calling Phase 3 done.
+  If any dimension is below 3, fix it before moving on.
+
+----------------------------------------------------------------
+EXIT CHECKLIST — VERIFY BEFORE CALLING PHASE 3 DONE
+----------------------------------------------------------------
+
+Go through each item. If you can't do it, go back and fix it.
+These are recall tests, not recognition tests. Close your files.
+
+  [ ] RAW API CALL FROM SCRATCH
+      Open a blank .py file. Write a working DeepSeek API call
+      from memory. No copy-paste. No looking at old code.
+
+  [ ] FINISH_REASON INSPECTED AND BRANCHED ON
+      Show code that handles all 4: stop, length, tool_calls,
+      content_filter. Explain what each means out loud.
+
+  [ ] EVERY CALL LOGGED
+      Open usage.jsonl. Every entry must have:
+      timestamp, model, prompt_hash, input_tokens, output_tokens,
+      cost, latency_ms, success, error.
+
+  [ ] BUDGET CAP WORKS
+      Set cap to $0.000001. Make a call. It should fail.
+      Reset cap. Make a call. It should work.
+
+  [ ] 10+ ASSERTION TESTS IN ONE COMMAND
+      python run_tests.py -> PASS/FAIL for 10+ tests.
+      Results saved to results/DATE.json automatically.
+
+  [ ] TESTS AND EVALS KEPT SEPARATE
+      assertions.json = programmatic checks (auto-run).
+      evals.json = judgment questions (reviewed by you weekly).
+      Explain the difference out loud without looking at notes.
+
+  [ ] JSON VALIDATED, SCHEMA-FIRST, RETRY ON FAILURE
+      extractor.py uses Pydantic schema.
+      On parse failure, error is fed back to model.
+      Max 2 retries. Returns error dict if all retries fail.
+
+  [ ] STREAMING WORKS WITH NON-STREAM FALLBACK
+      Stream a response. Tokens appear live.
+      If stream fails, code falls back to non-stream automatically.
+      Usage captured from final chunk.
+
+  [ ] TOOL LOOP WORKS
+      assistant.py runs a multi-tool task end-to-end.
+      Loop capped at 5 iterations.
+      length and content_filter handled.
+      All 3 error types handled in safe_execute.
+      Risky tools require y/n approval.
+      Every iteration logged via tracked_call.
+
+  [ ] YOU CAN EXPLAIN EACH ITEM TO A NON-TECHNICAL PERSON
+      Practice these out loud:
+      - "What is an API call and why do we log tokens?"
+      - "What is a system prompt and why does it matter?"
+      - "What is tool calling and how does the loop work?"
+      - "Why do we need a budget cap?"
+      - "What's the difference between a test and an eval?"
+      - "Why does streaming feel faster even though total time is the same?"
+
+----------------------------------------------------------------
+NOTES.MD — FINAL ENTRY TEMPLATE
+----------------------------------------------------------------
+
+  ## Phase 3 Complete
+
+  ### What I Built
+  - cli_chat.py: multi-turn chatbot with system prompt
+  - tracker.py: logs every call with cost, latency, rate limit retry
+  - extractor.py: structured JSON extraction with Pydantic + retry
+  - assistant.py: [describe your specific business task]
+  - Capstone: [name and one-line description]
+
+  ### Key Numbers
+  - Total Phase 3 cost: $X.XX
+
+  To calculate:
+    cat results/usage.jsonl | python3 -c "
+    import sys, json
+    lines = [json.loads(l) for l in sys.stdin if l.strip()]
+    print(f'Total: \${sum(l[\"cost\"] for l in lines):.6f} across {len(lines)} calls')
+    "
+
+  - Most expensive week: Week X ($X.XX)
+  - Average cost per call: $X.XXXXX
+  - Total API calls made: ~XXX
+
+  ### What Broke and How I Fixed It
+  - [list the 3 hardest bugs you fixed]
+
+  ### Capstone Self-Assessment
+  - Business value: X/5
+  - Tool design: X/5
+  - Error handling: X/5
+  - Test coverage: X/5
+  - README quality: X/5
+
+  ### What I'd Do Differently
+  - [honest reflection]
+
+  ### Ready For Phase 4
+  Phase 4 topics to explore:
+  - RAG (Retrieval-Augmented Generation): give the model access
+    to your own documents by retrieving relevant chunks at query time
+  - Embeddings + vector databases: store and search text by meaning,
+    not just keywords (Pinecone, Chroma, pgvector)
+  - Multi-agent systems: multiple specialized agents that hand off
+    tasks to each other
+  - Evaluation harnesses: automated LLM-as-judge scoring for evals
+  - Async API calls: run 10 prompts in parallel instead of sequentially
+  - Deployment: wrap your assistant in a FastAPI endpoint or
+    Streamlit UI so non-technical users can use it
+
+================================================================
+PHASE 3 COMPLETE.
+================================================================

@@ -1,0 +1,21 @@
+n8n Workflow Documentation
+
+n8n is a workflow automation tool that connects different services and automates repetitive tasks.
+
+Key concepts:
+- Workflows: Collections of connected nodes that perform a specific task
+- Nodes: Individual processing steps within a workflow (trigger, action, condition)
+- Triggers: Start a workflow when an event occurs (webhook, schedule, manual)
+- Execution: One run of a workflow, which can succeed or fail
+- Error handling: How workflows handle failures (stop, continue, retry)
+
+Common workflows:
+- Webhook trigger: Automatically start a workflow when an HTTP request is received
+- Scheduled workflow: Run on a cron schedule (e.g., every hour, daily at 8 AM)
+- Email automation: Send emails based on triggers or conditions
+
+Best practices:
+- Keep workflows modular and well-documented
+- Test workflows before deploying to production
+- Monitor execution logs for errors
+- Use error handling nodes for graceful failure recovery

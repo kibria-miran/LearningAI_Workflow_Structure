@@ -1,0 +1,84 @@
+================================================================
+PHASE 5 - WEEK 9: MCP (MODEL CONTEXT PROTOCOL)
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : <$0.20
+================================================================
+
+GOAL: Expose ONE business tool over MCP and call it from your agent.
+
+DELIVERABLE: mcp_server/ + agent calling it.
+
+NOTE: The MCP SDK evolves. Pin the version and read its README if a
+      call below differs.
+
+SETUP:
+  pip install mcp
+
+----------------------------------------------------------------
+DAY 1: WHAT MCP IS
+----------------------------------------------------------------
+
+CONCEPT:
+  A standard way for any agent (client) to discover and call tools
+  exposed by a separate program (server). Instead of pasting tool
+  code into every agent, you write the tool once as a server.
+  Transport: stdio (server launched as a subprocess) for local use.
+
+ANALOGY:
+  USB for tools. Any compliant client plugs into any compliant server.
+
+----------------------------------------------------------------
+DAY 2: USE AN EXISTING SERVER
+----------------------------------------------------------------
+
+  Connect a client to a ready-made filesystem or docs server, list its
+  tools, call one. Print the tool schemas. Notice: they look like the
+  tool definitions you already write by hand.
+
+----------------------------------------------------------------
+DAY 3-4: BUILD YOUR OWN SERVER
+----------------------------------------------------------------
+
+CODE (mcp_server/orders_server.py):
+  from mcp.server.fastmcp import FastMCP
+  mcp = FastMCP("orders")
+
+  ORDERS = {"A1001": {"status": "shipped", "carrier": "DHL"},
+            "A1002": {"status": "processing"}}
+
+  @mcp.tool()
+  def lookup_order(order_id: str) -> dict:
+      """Look up an order's status by id (read-only)."""
+      return ORDERS.get(order_id, {"error": "order not found"})
+
+  if __name__ == "__main__":
+      mcp.run()        # stdio
+
+  Keep it READ-ONLY. Anything that changes data stays tier 2.
+
+----------------------------------------------------------------
+DAY 5: CALL IT FROM YOUR AGENT + TREAT OUTPUT AS UNTRUSTED
+----------------------------------------------------------------
+
+  Write a small client that launches the server over stdio, lists
+  tools, and converts them into your TOOLS list format. Route calls
+  through your guardrails: validation, loop guard, budget, tracing.
+
+  MCP tool output is DATA. Wrap it like any other tool result.
+  A third-party server can return instructions; never trust it more
+  than a document.
+
+PREDICT BEFORE YOU RUN:
+  What does your agent do if the server crashes mid-call?
+  (Test it: kill the server process.)
+
+EXPLAIN IT BACK:
+  "What does MCP change, and what does it NOT make safer?"
+
+COMMIT: git add . && git commit -m "week9: orders MCP server + client"
+
+EXIT WHEN:
+  [ ] Your MCP server works, agent calls it, crash handled
+================================================================

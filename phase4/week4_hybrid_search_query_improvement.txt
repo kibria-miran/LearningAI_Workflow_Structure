@@ -1,0 +1,348 @@
+================================================================
+PHASE 4 - WEEK 4: HYBRID SEARCH + QUERY IMPROVEMENT
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.05 for the whole week
+================================================================
+
+GOAL: Beat your Week 3 baseline by combining dense (FAISS) and
+      keyword (BM25) search. Every change is validated against
+      the eval set. Keep only what improves the score.
+
+DELIVERABLE: hybrid retriever beating baseline.
+
+RULE: Run run_eval.py after EVERY change. Keep the change only
+      if the score improves. Revert if it doesn't.
+
+----------------------------------------------------------------
+DAY 1: BM25 OVER THE SAME CHUNKS
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  BM25 is a keyword-based ranking algorithm. It scores chunks
+  based on how often the query words appear in them.
+
+  DENSE (FAISS): finds semantically similar chunks.
+    Good for: paraphrased questions, synonyms.
+    Bad for: exact identifiers (order IDs, product codes, names).
+
+  BM25: finds chunks with exact keyword matches.
+    Good for: exact terms, product names, codes, proper nouns.
+    Bad for: paraphrased questions (misses synonyms).
+
+  HYBRID: combines both. Gets the best of both worlds.
+
+  ANALOGY: Dense search is like asking a librarian "find books
+  about space travel." BM25 is like searching the index for
+  "Apollo 11". Hybrid does both.
+
+  pip install rank-bm25
+
+CODE:
+  # day1_bm25.py
+  from rank_bm25 import BM25Okapi
+  import json
+
+  with open("phase4/results/chunks_metadata.json") as f:
+      chunks = json.load(f)
+
+  # Tokenize chunks for BM25
+  tokenized = [c["text"].lower().split() for c in chunks]
+  bm25 = BM25Okapi(tokenized)
+
+  def bm25_retrieve(query: str, k: int = 5) -> list[dict]:
+      tokens = query.lower().split()
+      scores = bm25.get_scores(tokens)
+      top_indices = scores.argsort()[-k:][::-1]
+      results = []
+      for idx in top_indices:
+          chunk = chunks[idx].copy()
+          chunk["bm25_score"] = float(scores[idx])
+          results.append(chunk)
+      return results
+
+  # Test
+  results = bm25_retrieve("n8n webhook trigger automation", k=5)
+  for r in results:
+      print(f"BM25: {r['bm25_score']:.3f} | {r['source']} p{r['page']}")
+      print(f"  {r['text'][:100]}\n")
+
+PREDICT BEFORE YOU RUN:
+  Will BM25 find different chunks than FAISS for the same query?
+  Which method will work better for exact product names?
+
+VERIFY:
+  BM25 returns results. Scores are non-zero for relevant queries.
+
+COMMIT: git add . && git commit -m "week4 d1: bm25 retrieval working"
+
+----------------------------------------------------------------
+DAY 2: RECIPROCAL RANK FUSION — MERGE DENSE + BM25
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  RRF (Reciprocal Rank Fusion) merges two ranked lists into one.
+
+  Formula for each chunk:
+    RRF_score = 1/(k + rank_in_dense) + 1/(k + rank_in_bm25)
+    where k=60 (a constant that dampens the effect of top ranks)
+
+  A chunk that ranks #1 in both lists gets the highest RRF score.
+  A chunk that ranks #1 in one list and doesn't appear in the
+  other still gets a decent score.
+
+  WHY RRF INSTEAD OF AVERAGING SCORES?
+  Dense scores (0.0–1.0) and BM25 scores (0–100+) are on
+  completely different scales. You can't average them directly.
+  RRF uses ranks (1st, 2nd, 3rd...) which are scale-independent.
+
+CODE:
+  # day2_rrf.py
+  from day1_retrieval import retrieve as dense_retrieve
+  from day1_bm25 import bm25_retrieve
+
+  def rrf_retrieve(query: str, k: int = 5, rrf_k: int = 60) -> list[dict]:
+      """Merge dense and BM25 results using Reciprocal Rank Fusion."""
+      dense_results = dense_retrieve(query, k=k*2)
+      bm25_results = bm25_retrieve(query, k=k*2)
+
+      # Build score map: chunk_id -> RRF score
+      scores = {}
+      chunk_map = {}
+
+      for rank, chunk in enumerate(dense_results):
+          cid = chunk["chunk_id"]
+          scores[cid] = scores.get(cid, 0) + 1 / (rrf_k + rank + 1)
+          chunk_map[cid] = chunk
+
+      for rank, chunk in enumerate(bm25_results):
+          cid = chunk["chunk_id"]
+          scores[cid] = scores.get(cid, 0) + 1 / (rrf_k + rank + 1)
+          chunk_map[cid] = chunk
+
+      # Sort by RRF score
+      sorted_ids = sorted(scores, key=lambda x: scores[x], reverse=True)
+      results = []
+      for cid in sorted_ids[:k]:
+          chunk = chunk_map[cid].copy()
+          chunk["rrf_score"] = scores[cid]
+          results.append(chunk)
+      return results
+
+  # Compare dense vs hybrid on 3 queries
+  for query in ["n8n webhook", "RAG retrieval augmented generation", "agentic AI tools"]:
+      dense = dense_retrieve(query, k=3)
+      hybrid = rrf_retrieve(query, k=3)
+      print(f"\nQuery: {query}")
+      print("Dense:", [r["source"] for r in dense])
+      print("Hybrid:", [r["source"] for r in hybrid])
+
+PREDICT BEFORE YOU RUN:
+  Will hybrid always return different results than dense?
+  For exact keyword queries, which will rank better?
+
+VERIFY:
+  RRF returns results. Some queries show different rankings vs dense.
+
+COMMIT: git add . && git commit -m "week4 d2: rrf hybrid retrieval"
+
+----------------------------------------------------------------
+DAY 3: RE-RUN EVAL — KEEP ONLY IF SCORE IMPROVES
+Estimated: 60 min | Cost: <$0.03
+----------------------------------------------------------------
+
+CONCEPT:
+  This is the most important day of Week 4.
+  You have a baseline. Now you measure if hybrid beats it.
+
+  If hybrid improves Hit@3 or Hit@5: keep it.
+  If hybrid doesn't improve: revert to dense-only.
+
+  Don't keep changes because they "feel better". Keep them
+  because the numbers say so.
+
+TASKS:
+  1. Update run_eval.py to use rrf_retrieve instead of dense retrieve
+  2. Run run_eval.py
+  3. Compare to baseline scores in notes.md
+  4. Decision: keep hybrid or revert?
+
+WRITE IN NOTES.MD:
+  "Hybrid eval results:"
+  "  Retrieval Hit@3: ____% (baseline: ____%, delta: ____)"
+  "  Retrieval Hit@5: ____% (baseline: ____%, delta: ____)"
+  "  Answer quality:  ____% (baseline: ____%, delta: ____)"
+  "Decision: [keep hybrid / revert to dense] because [reason]"
+
+COMMIT: git add . && git commit -m "week4 d3: hybrid eval run, decision recorded"
+
+----------------------------------------------------------------
+DAY 4: QUERY REWRITING + SYNONYM MAP
+Estimated: 60–90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  Your documents use specific vocabulary. Users may use different
+  words for the same concept.
+
+  Example:
+  Document says: "workflow automation"
+  User asks: "how to automate tasks"
+
+  A synonym map bridges this gap without retraining the model.
+
+  SYNONYM MAP: a dict mapping user terms to document terms.
+    {"automate": "workflow automation", "bot": "agent", ...}
+
+  QUERY EXPANSION: before searching, replace user terms with
+  their document equivalents.
+
+CODE:
+  # day4_query_improvement.py
+
+  SYNONYM_MAP = {
+      # Add synonyms specific to YOUR corpus vocabulary
+      "automate": "workflow automation",
+      "bot": "agent",
+      "ai assistant": "agentic AI",
+      "return": "refund",
+      "cancel": "cancellation",
+      # Add more based on your Week 3 failure analysis
+  }
+
+  def expand_query(query: str) -> str:
+      """Replace user terms with document vocabulary."""
+      expanded = query.lower()
+      for user_term, doc_term in SYNONYM_MAP.items():
+          expanded = expanded.replace(user_term, doc_term)
+      return expanded
+
+  # Test
+  queries = [
+      "how do I automate my tasks?",
+      "I want to cancel my order",
+      "set up an AI bot"
+  ]
+  for q in queries:
+      expanded = expand_query(q)
+      print(f"Original:  {q}")
+      print(f"Expanded:  {expanded}\n")
+
+TASKS:
+  1. Build synonym map from your Week 3 failure analysis
+     (look at the "bad_query" failures — what vocabulary mismatch caused them?)
+  2. Add expand_query() to your retrieval pipeline
+  3. Re-run eval. Did it improve?
+
+WRITE IN NOTES.MD:
+  "Synonym map: [list your mappings]"
+  "Eval after query expansion: Hit@3 ____%, Hit@5 ____%"
+
+COMMIT: git add . && git commit -m "week4 d4: query expansion with synonym map"
+
+----------------------------------------------------------------
+DAY 5: TUNE CHUNK SIZE + OVERLAP AGAINST EVAL
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Your Week 1 chunk size was a guess. Now you have an eval set.
+  Test 2–3 chunk sizes and keep the one that scores highest.
+
+  WHAT TO TEST:
+  - Size 400, overlap 50
+  - Size 800, overlap 100 (your current setting)
+  - Size 1200, overlap 150
+
+  For each: rebuild the index, run the eval, record scores.
+  Keep the best-scoring configuration.
+
+TASKS:
+  1. Modify build_index.py to accept chunk_size as a parameter
+  2. Build 3 indexes with different sizes
+  3. Run run_eval.py for each
+  4. Record results in notes.md
+  5. Set the best size as the default in build_index.py
+
+WRITE IN NOTES.MD:
+  "Chunk size tuning:"
+  "  Size 400:  Hit@3 ____%, Hit@5 ____%"
+  "  Size 800:  Hit@3 ____%, Hit@5 ____%"
+  "  Size 1200: Hit@3 ____%, Hit@5 ____%"
+  "Winner: size ____ because [reason]"
+
+COMMIT: git add . && git commit -m "week4 d5: chunk size tuned against eval"
+
+----------------------------------------------------------------
+DAY 6: METADATA FILTERS — BY DOC TYPE, DATE
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Sometimes you want to search only within a subset of documents.
+  "Show me only the n8n workflow docs" or "only PDFs from 2026".
+
+  Metadata filters narrow the search space before similarity search.
+  This improves precision when the user specifies a document type.
+
+CODE:
+  # day6_metadata_filters.py
+
+  def retrieve_filtered(query: str, k: int = 5,
+                        source_contains: str = None,
+                        min_score: float = 0.0) -> list[dict]:
+      """Retrieve with optional metadata filters."""
+      # Get more results than needed, then filter
+      results = rrf_retrieve(query, k=k*3)
+
+      if source_contains:
+          results = [r for r in results if source_contains.lower() in r["source"].lower()]
+
+      if min_score > 0:
+          results = [r for r in results if r.get("rrf_score", 0) >= min_score]
+
+      return results[:k]
+
+  # Test
+  results = retrieve_filtered("workflow automation", k=3, source_contains="n8n")
+  print("Filtered to n8n docs:")
+  for r in results:
+      print(f"  {r['source']} p{r['page']}")
+
+VERIFY:
+  Filtered results only contain documents matching the filter.
+
+COMMIT: git add . && git commit -m "week4 d6: metadata filters added"
+
+----------------------------------------------------------------
+DAY 7: REVIEW + FINAL HYBRID EVAL
+Estimated: 60 min | Cost: <$0.02
+----------------------------------------------------------------
+
+TASKS:
+  1. Run run_eval.py with your best configuration
+  2. Compare to baseline from Week 3
+  3. Record final Week 4 scores in notes.md
+
+WEEK 4 DELIVERABLE CHECKLIST:
+  [ ] BM25 retrieval working over same chunks as FAISS
+  [ ] RRF hybrid retrieval implemented
+  [ ] Eval run after each change (keep only improvements)
+  [ ] Synonym map built from failure analysis
+  [ ] Chunk size tuned against eval
+  [ ] Metadata filters working
+  [ ] Hybrid beats dense-only baseline (with numbers)
+  [ ] All changes committed with eval scores in commit messages
+
+FINAL SCORES TO RECORD:
+  Retrieval Hit@3:  ____% (was ____%)
+  Retrieval Hit@5:  ____% (was ____%)
+  Answer quality:   ____% (was ____%)
+  Refusal quality:  ____% (was ____%)
+
+================================================================
+NEXT: week5_reranker_ragas.txt
+================================================================

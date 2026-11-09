@@ -1,0 +1,96 @@
+================================================================
+PHASE 5 - WEEK 8: LANGGRAPH
+Provider : DeepSeek (via langchain-openai, base_url override)
+Model    : deepseek-chat
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : <$0.30
+================================================================
+
+GOAL: Rebuild your hand-made agent in LangGraph, get the SAME eval
+      score, and know what the framework saved and what it hid.
+
+DELIVERABLE: langgraph_version/ with same tools, same eval score.
+
+NOTE: LangGraph's API changes between releases. Pin the version you
+      install (pip freeze) and check the current docs for any
+      signature below that errors.
+
+SETUP:
+  pip install langgraph langchain-openai langchain-core
+
+----------------------------------------------------------------
+DAY 1-2: THE GRAPH
+----------------------------------------------------------------
+
+CONCEPT:
+  State = a dict passed between nodes.
+  Node  = a function(state) -> partial state update.
+  Edge  = which node runs next. Conditional edge = a function picks.
+
+  Your loop maps to a 2-node graph:
+     [agent] --has tool calls?--> [tools] --> back to [agent]
+             --no--------------> END
+
+CODE (skeleton - adapt):
+  from langgraph.graph import StateGraph, MessagesState, START, END
+  from langgraph.prebuilt import ToolNode
+  from langchain_openai import ChatOpenAI
+  from langchain_core.tools import tool
+  import os
+
+  llm = ChatOpenAI(model="deepseek-chat", base_url="https://api.deepseek.com",
+                   api_key=os.environ["DEEPSEEK_API_KEY"])
+
+  @tool
+  def calculator(expr: str) -> str:
+      """Evaluate arithmetic."""
+      ...  # reuse your AST calculator
+
+  tools = [calculator]
+  llm_t = llm.bind_tools(tools)
+
+  def agent(state: MessagesState):
+      return {"messages": [llm_t.invoke(state["messages"])]}
+
+  def route(state: MessagesState):
+      return "tools" if state["messages"][-1].tool_calls else END
+
+  g = StateGraph(MessagesState)
+  g.add_node("agent", agent); g.add_node("tools", ToolNode(tools))
+  g.add_edge(START, "agent")
+  g.add_conditional_edges("agent", route, ["tools", END])
+  g.add_edge("tools", "agent")
+  app = g.compile()
+
+  app.invoke({"messages": [("user", "3 hoodies at 45.99?")]},
+             config={"recursion_limit": 16})     # = your step cap
+
+----------------------------------------------------------------
+DAY 3: CHECKPOINTS + HUMAN APPROVAL
+----------------------------------------------------------------
+
+  Compile with a checkpointer (MemorySaver) and a thread_id in config.
+  Use the built-in interrupt feature (interrupt_before=["tools"] or
+  the interrupt() function in a node) for tier-2 approval. Resume
+  with the same thread_id. Compare with your input() gate.
+
+----------------------------------------------------------------
+DAY 4-5: EVAL + TRACING
+----------------------------------------------------------------
+
+  Run your Week 6 eval against the LangGraph agent. Same tasks,
+  same checks. Optional: Langfuse or LangSmith on top of your JSONL.
+
+PREDICT BEFORE YOU RUN:
+  Will the LangGraph version score higher, lower, or equal? Why?
+
+EXPLAIN IT BACK:
+  "What did LangGraph save me? What did it hide? When would I NOT use it?"
+  (Write 5 lines in notes.md.)
+
+COMMIT: git add . && git commit -m "week8: langgraph rebuild, same eval"
+
+EXIT WHEN:
+  [ ] Same tools + same eval run on both versions, scores compared
+  [ ] Approval interrupt working
+================================================================

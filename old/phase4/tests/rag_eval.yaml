@@ -1,0 +1,283 @@
+# Phase 4 - Evaluation Set (Week 3)
+# 30+ real questions from business documents
+# Each question has: expected_source, key_facts, question_type, forbidden_terms (for refusal questions)
+
+- id: q001
+  question: "What is an n8n workflow?"
+  expected_source: "n8n_workflow_documentation.pdf"
+  key_facts: ["automation", "nodes", "trigger"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q002
+  question: "How do you set up a webhook trigger in n8n?"
+  expected_source: "n8n_workflow_documentation.pdf"
+  key_facts: ["webhook", "url", "trigger"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q003
+  question: "What are the benefits of agentic AI?"
+  expected_source: "ai_strategy_document.pdf"
+  key_facts: ["autonomy", "decision-making", "goals"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q004
+  question: "How do I return a product?"
+  expected_source: "refund_policy.pdf"
+  key_facts: ["return window", "condition", "receipt"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q005
+  question: "What is our refund policy?"
+  expected_source: "refund_policy.pdf"
+  key_facts: ["30 days", "original condition", "refund method"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q006
+  question: "How long does delivery take?"
+  expected_source: "shipping_policy.pdf"
+  key_facts: ["2-5 business days", "tracking number", "carrier"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q007
+  question: "What payment methods do you accept?"
+  expected_source: "payment_policy.pdf"
+  key_facts: ["credit card", "PayPal", "bank transfer"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q008
+  question: "Can I get my money back?"
+  expected_source: "refund_policy.pdf"
+  key_facts: ["within 30 days", "original condition", "processing time"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q009
+  question: "Where is my shipment?"
+  expected_source: "shipping_policy.pdf"
+  key_facts: ["tracking link", "carrier name", "estimated delivery"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q010
+  question: "Tell me about the Eiffel Tower."
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["Eiffel", "Paris", "France", "tourist", "monument"]
+  question_type: refusal
+
+- id: q011
+  question: "What is the GDP of Germany in 2024?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["GDP", "billion", "trillion", "economy"]
+  question_type: refusal
+
+- id: q012
+  question: "Who won the 2025 World Cup?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["World Cup", "winner", "2025", "soccer", "football"]
+  question_type: refusal
+
+- id: q013
+  question: "What is our competitor's pricing?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["competitor", "pricing", "cost", "expensive"]
+  question_type: refusal
+
+- id: q014
+  question: "How do I automate tasks using n8n?"
+  expected_source: "n8n_workflow_documentation.pdf"
+  key_facts: ["workflow", "automation", "tasks"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q015
+  question: "How do I cancel my order?"
+  expected_source: "order_management.pdf"
+  key_facts: ["cancellation window", "refund eligibility", "status change"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q016
+  question: "What is the current stock price of Apple?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["stock", "price", "AAPL", "market", "share"]
+  question_type: refusal
+
+- id: q017
+  question: "How do I set up a scheduled workflow in n8n?"
+  expected_source: "n8n_workflow_documentation.pdf"
+  key_facts: ["schedule", "cron", "automation"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q018
+  question: "What are the system requirements for running n8n?"
+  expected_source: "n8n_installation_guide.pdf"
+  key_facts: ["Node.js", "Docker", "memory", "CPU"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q019
+  question: "How do I troubleshoot n8n execution errors?"
+  expected_source: "n8n_troubleshooting.pdf"
+  key_facts: ["error log", "execution failed", "workflow status"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q020
+  question: "What is the difference between n8n and Zapier?"
+  expected_source: "comparison_documents.pdf"
+  key_facts: ["workflow automation", "visual builder", "pricing model"]
+  forbidden_terms: []
+  question_type: comparison
+
+- id: q021
+  question: "How do I update my billing information?"
+  expected_source: "billing_management.pdf"
+  key_facts: ["payment method", "invoice details", "account settings"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q022
+  question: "Can I change my subscription plan?"
+  expected_source: "billing_management.pdf"
+  key_facts: ["plan upgrade", "proration", "billing cycle"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q023
+  question: "What is our company's data retention policy?"
+  expected_source: "data_governance.pdf"
+  key_facts: ["retention period", "secure deletion", "compliance"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q024
+  question: "How long do we keep customer records?"
+  expected_source: "data_governance.pdf"
+  key_facts: ["7 years", "GDPR compliance", "audit trail"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q025
+  question: "Who won the Nobel Prize in Physics 2024?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["Nobel", "Physics", "2024", " laureate", "award"]
+  question_type: refusal
+
+- id: q026
+  question: "What is our return policy for damaged items?"
+  expected_source: "refund_policy.pdf"
+  key_facts: ["damaged goods", "replacement", "refund condition"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q027
+  question: "How do I contact customer support?"
+  expected_source: "contact_info.pdf"
+  key_facts: ["email address", "phone number", "hours of operation"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q028
+  question: "What are the hours of operation for support?"
+  expected_source: "contact_info.pdf"
+  key_facts: ["9 AM - 5 PM", "time zone", "business days"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q029
+  question: "How do I reset my password?"
+  expected_source: "account_management.pdf"
+  key_facts: ["password reset link", "email verification", "security question"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q030
+  question: "What is the forbidden term test for?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["test", "forbidden", "should not appear"]
+  question_type: refusal
+
+- id: q031
+  question: "How do I deploy n8n on a VPS?"
+  expected_source: "deployment_guide.pdf"
+  key_facts: ["SSH", "firewall", "HTTPS", "domain"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q032
+  question: "How do I backup my n8n data?"
+  expected_source: "operations_guide.pdf"
+  key_facts: ["database backup", "file export", "schedule"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q033
+  question: "What is our company's API rate limit?"
+  expected_source: "api_documentation.pdf"
+  key_facts: ["requests per minute", "burst limit", "error code"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q034
+  question: "How do I monitor API usage costs?"
+  expected_source: "cost_tracking.pdf"
+  key_facts: ["monthly spend", "daily alert", "budget cap"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q035
+  question: "Who won the Super Bowl in 2025?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["Super Bowl", "2025", "champion", "football"]
+  question_type: refusal
+
+- id: q036
+  question: "How do I integrate third-party services with n8n?"
+  expected_source: "n8n_integrations.pdf"
+  key_facts: ["API connection", "authentication", "webhooks"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q037
+  question: "What data formats does n8n support?"
+  expected_source: "n8n_formats.pdf"
+  key_facts: ["JSON", "CSV", "XML", "API"]
+  forbidden_terms: []
+  question_type: factual
+
+- id: q038
+  question: "How do I secure my n8n workflow?"
+  expected_source: "security_guide.pdf"
+  key_facts: ["authentication", "authorization", "api keys"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q039
+  question: "How do I migrate from n8n self-hosted to n8n.cloud?"
+  expected_source: "migration_guide.pdf"
+  key_facts: ["data export", "import process", "downtime"]
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q040
+  question: "What is the capital of France?"
+  expected_source: null
+  key_facts: []
+  forbidden_terms: ["Paris", "Eiffel Tower", "France", "Europe"]
+  question_type: refusal

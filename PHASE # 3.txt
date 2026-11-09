@@ -1,0 +1,103 @@
+PHASE 3: LLM SKILLS (4-5 wks, 1-2 hrs/day)
+
+WEEK 0  GATE (2-3 days, must pass before Week 1)
+  [ ] Load .env with python-dotenv
+  [ ] requests.get/post, print JSON
+  [ ] Write a function (dict in, dict out, docstring)
+  [ ] git add / commit / push without looking it up
+  [ ] Explain sync vs async in one sentence
+  Pick ONE provider + ONE cheap model now (e.g. Claude Haiku,
+  GPT-4o-mini, Gemini Flash). Write the exact model name in notes.md.
+
+WEEK 1  API CALLS + PROMPTING
+  D1  Key in .env (gitignored). Raw requests call, print reply
+  D2  Read response: message, usage, finish_reason
+      Branch on finish_reason: stop / length (truncated) /
+      tool_calls (handle it) / content_filter (log it)
+      Then switch to the official SDK and compare
+  D3  temperature, max_tokens, stop: same prompt 5x at temp 0 vs 1
+  D4  System vs user prompt. Write 3 roles
+      (support agent, summarizer, extractor)
+  D5  Multi-turn CLI chatbot (messages list)
+  D6  Few-shot, step-by-step, explicit output rules
+  D7  Review, update notes.md (what broke, what you fixed)
+  DELIVERABLE: cli_chat.py with a system prompt
+
+WEEK 2  COST TRACKING + TESTS
+  D1  tracker.py wraps every call, appends to usage.jsonl:
+      timestamp, model (pinned version), prompt_hash (sha256[:8]),
+      input/output tokens, cost, latency, success, error
+  D2  config/prices.json -> cost per call
+  D3  Daily/monthly budget cap that stops calls
+  D4  Split tests from evals:
+      tests/assertions.json = programmatic checks
+        (contains X, valid JSON, under N words, refuses Y)
+      tests/evals.json = judgment ("is it a good answer?"),
+        reviewed by you weekly
+  D5  run_tests.py: 10 assertions, PASS/FAIL, total cost
+  D6  Save each run to results/DATE.json, diff before vs after
+  D7  Change a system prompt, re-run, compare cost + results
+  DELIVERABLE: all scripts log cost; suite runs in one command
+
+WEEK 3  STRUCTURED OUTPUT + STREAMING
+  D1  Prompt-first JSON + json.loads. Watch it break
+      (extra text, code fences)
+  D2  Schema-first: define a Pydantic model, use the API's
+      structured output / tool schema. Compare reliability
+      against D1 on 10 inputs, record the numbers
+  D3  Retry on invalid output (max 2), feed the error back
+  D4  Build extractor.py (messy email/invoice -> JSON)
+      Add 5 extraction tests
+  D5  Streaming: stream=True, print tokens live
+  D6  Streaming + usage logging; know what breaks:
+      mid-stream errors look like normal endings, usage may
+      arrive only at the end, partial output can't be retried.
+      Rule: if stream breaks, fall back to non-stream, then retry
+  D7  Compare time to first token, stream vs non-stream
+  DELIVERABLE: extractor.py (validated, retries), streaming CLI
+
+WEEK 4  TOOL CALLING + LOOP
+  D1  One tool (JSON schema), confirm model returns a tool call
+  D2  Execute it, return result, get final answer
+  D3  Build the LOOP: model -> tool -> model -> maybe another
+      tool -> final answer. Cap at 5 iterations, log each step
+  D4  2-3 tools, model picks correctly
+      (lookup_order, get_price, draft_email)
+  D5  Errors: bad args, unknown tool, tool crash -> send error
+      text back to the model, don't crash
+  D6  Human approval (y/n) for risky tools
+  D7  Run all tests, review usage.jsonl, finish notes.md
+  DELIVERABLE: assistant.py for ONE real business task
+               (e.g. order lookup + draft reply, with approval)
+
+WEEK 5  BUFFER (use if behind, otherwise capstone prep)
+  Finish unfinished deliverables, add tests for what broke,
+  write the real prompts + tools your capstone will need
+
+EXIT CHECKLIST
+  [ ] Raw API call from scratch, no copy-paste
+  [ ] finish_reason inspected and branched on
+  [ ] Every call logged: tokens, cost, latency, prompt hash,
+      pinned model version, success/error
+  [ ] Budget cap works
+  [ ] 10+ assertion tests in one command, results saved
+  [ ] Tests and evals kept separate
+  [ ] JSON validated, schema-first, retry on failure
+  [ ] Streaming works with non-stream fallback
+  [ ] Tool loop works (capped, error-handled, approval on risky)
+  [ ] You can explain each item to a non-technical person
+
+RULES
+  - Change one thing at a time, re-run tests
+  - Verify output yourself, never trust "Done"
+  - Budget cap on from Day 1
+  - No provider-hopping: one provider until Phase 3 ends
+
+FOLDER
+  phase3/
+    .env (gitignored)   notes.md
+    config/prices.json
+    tracker.py  run_tests.py  cli_chat.py
+    extractor.py  assistant.py
+    tests/assertions.json  tests/evals.json
+    results/usage.jsonl  results/DATE.json

@@ -1,0 +1,322 @@
+================================================================
+PHASE 4 - WEEK 3: EVAL SET (BEFORE IMPROVING ANYTHING)
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.05 for the whole week
+================================================================
+
+GOAL: Build a rigorous evaluation set BEFORE making any
+      improvements. You cannot measure improvement without a baseline.
+      This week produces your baseline score.
+
+DELIVERABLE: tests/rag_eval.yaml + baseline numbers in notes.md
+
+CRITICAL RULE: Do NOT change build_index.py or ask.py this week.
+  The whole point is to measure the current system as-is.
+  Changes come in Week 4 — after you have numbers to beat.
+
+----------------------------------------------------------------
+DAY 1: WRITE 30+ REAL QUESTIONS WITH EXPECTED ANSWERS
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Good eval questions come from real use cases. Ask yourself:
+  "What would a real user of this system actually ask?"
+
+  Each question needs:
+  - expected_source: which file should appear in top-k results
+  - key_facts: words or phrases that MUST appear in a correct answer
+  - question_type: factual / procedural / comparison / refusal
+
+  WHY 30+?
+  With fewer than 30 questions, one lucky or unlucky result
+  swings your score by 3%+. 30+ gives you statistical stability.
+
+EVAL QUESTION TEMPLATE (YAML):
+  - id: q001
+    question: "What is an n8n workflow?"
+    expected_source: "n8n_workflow_documentation.pdf"
+    key_facts: ["automation", "nodes", "trigger"]
+    forbidden_terms: []
+    question_type: factual
+
+  - id: q002
+    question: "How do you set up a webhook trigger in n8n?"
+    expected_source: "n8n_workflow_documentation.pdf"
+    key_facts: ["webhook", "url", "trigger"]
+    forbidden_terms: []
+    question_type: procedural
+
+  - id: q031  # refusal question — no answer in docs
+    question: "What is the GDP of Germany in 2024?"
+    expected_source: null
+    key_facts: []
+    forbidden_terms: ["GDP", "billion", "trillion", "economy"]
+    question_type: refusal
+
+TASKS:
+  1. Write 25+ factual/procedural questions from your actual docs
+  2. Write 5 refusal questions (topics NOT in your docs)
+  3. For each question, identify the expected source file
+  4. For each question, list 2–3 key facts that must appear
+
+WRITE IN NOTES.MD:
+  "Eval set: 30 questions (25 answerable + 5 refusals)"
+  "Question types: X factual, X procedural, X comparison, 5 refusal"
+
+COMMIT: git add tests/rag_eval.yaml && git commit -m "week3 d1: 30 eval questions written"
+
+----------------------------------------------------------------
+DAY 2: ADD 5 REFUSAL QUESTIONS
+Estimated: 30 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Refusal questions test that your system doesn't hallucinate.
+  A system that answers everything confidently is dangerous.
+  A system that says "I don't know" when appropriate is trustworthy.
+
+  GOOD REFUSAL QUESTIONS:
+  - Topics completely outside your corpus domain
+  - Questions about events after your docs were written
+  - Questions that sound plausible but have no answer in your docs
+
+  EXAMPLES:
+  - "What is the current stock price of Apple?"
+  - "Who won the 2025 World Cup?"
+  - "What is our competitor's pricing?"
+
+  For refusal questions:
+  - expected_source: null
+  - key_facts: [] (empty — we expect a refusal, not facts)
+  - forbidden_terms: [specific facts the model might hallucinate]
+
+VERIFY:
+  You have exactly 5 refusal questions in rag_eval.yaml.
+  Each has forbidden_terms that would indicate hallucination.
+
+COMMIT: git add tests/rag_eval.yaml && git commit -m "week3 d2: 5 refusal questions added"
+
+----------------------------------------------------------------
+DAY 3: run_eval.py — RETRIEVAL HIT@K
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Hit@K: for a given question, is the expected source file
+  in the top-K retrieved chunks?
+
+  Hit@3 = 1 if expected_source appears in top 3 results, else 0.
+  Hit@5 = 1 if expected_source appears in top 5 results, else 0.
+
+  This measures retrieval quality BEFORE the LLM sees anything.
+  If retrieval is bad, the LLM can't give good answers.
+  Fix retrieval first, then fix the LLM prompt.
+
+CODE:
+  # run_eval.py
+  import yaml, json
+  from day1_retrieval import retrieve
+
+  with open("tests/rag_eval.yaml") as f:
+      eval_questions = yaml.safe_load(f)
+
+  hit_at_3 = 0
+  hit_at_5 = 0
+  total_answerable = 0
+
+  for q in eval_questions:
+      if q["question_type"] == "refusal":
+          continue  # skip refusals for retrieval eval
+      total_answerable += 1
+
+      results = retrieve(q["question"], k=5)
+      sources_top3 = [r["source"] for r in results[:3]]
+      sources_top5 = [r["source"] for r in results[:5]]
+
+      expected = q["expected_source"]
+      h3 = 1 if expected in sources_top3 else 0
+      h5 = 1 if expected in sources_top5 else 0
+      hit_at_3 += h3
+      hit_at_5 += h5
+
+      status = "HIT@3" if h3 else ("HIT@5" if h5 else "MISS")
+      print(f"{status} | {q['id']}: {q['question'][:60]}")
+      if not h3:
+          print(f"       Expected: {expected}")
+          print(f"       Got:      {sources_top5}")
+
+  print(f"\nRetrieval Hit@3: {hit_at_3}/{total_answerable} = {hit_at_3/total_answerable:.1%}")
+  print(f"Retrieval Hit@5: {hit_at_5}/{total_answerable} = {hit_at_5/total_answerable:.1%}")
+
+PREDICT BEFORE YOU RUN:
+  What Hit@5 score do you expect? (>70% is a reasonable baseline)
+  Which question types will have the most misses?
+
+VERIFY:
+  Script runs without errors.
+  Hit@3 and Hit@5 scores printed.
+
+WRITE IN NOTES.MD:
+  "BASELINE Retrieval Hit@3: X% | Hit@5: X%"
+  "Worst misses: [list 3 questions that missed]"
+
+COMMIT: git add run_eval.py && git commit -m "week3 d3: retrieval hit@k eval"
+
+----------------------------------------------------------------
+DAY 4: ANSWER CHECK — KEY FACTS + FORBIDDEN TERMS
+Estimated: 90 min | Cost: <$0.03
+----------------------------------------------------------------
+
+CONCEPT:
+  After measuring retrieval, measure answer quality.
+
+  KEY FACTS CHECK: does the answer contain the required words?
+  FORBIDDEN TERMS CHECK: does the answer avoid hallucinated content?
+
+  These are simple string checks — fast and cheap.
+  They're not perfect (a model could use synonyms), but they
+  catch the most obvious failures.
+
+CODE ADDITION to run_eval.py:
+  # Add answer quality check
+
+  from day2_first_rag import rag_answer_with_guardrail
+
+  answer_pass = 0
+  refusal_pass = 0
+  total_refusals = sum(1 for q in eval_questions if q["question_type"] == "refusal")
+
+  for q in eval_questions:
+      result = rag_answer_with_guardrail(q["question"])
+      answer = (result["answer"] or "").lower()
+
+      if q["question_type"] == "refusal":
+          # Pass if: refused OR no forbidden terms in answer
+          refused = result.get("refused", False) or "not_found" in answer
+          no_hallucination = not any(t.lower() in answer for t in q.get("forbidden_terms", []))
+          passed = refused or no_hallucination
+          if passed:
+              refusal_pass += 1
+          print(f"{'PASS' if passed else 'FAIL'} REFUSAL | {q['id']}: {q['question'][:50]}")
+      else:
+          # Pass if: all key facts present
+          facts_present = all(fact.lower() in answer for fact in q.get("key_facts", []))
+          if facts_present:
+              answer_pass += 1
+          print(f"{'PASS' if facts_present else 'FAIL'} ANSWER | {q['id']}: {q['question'][:50]}")
+          if not facts_present:
+              missing = [f for f in q["key_facts"] if f.lower() not in answer]
+              print(f"       Missing facts: {missing}")
+
+  print(f"\nAnswer quality: {answer_pass}/{total_answerable} = {answer_pass/total_answerable:.1%}")
+  print(f"Refusal quality: {refusal_pass}/{total_refusals} = {refusal_pass/total_refusals:.1%}")
+
+WRITE IN NOTES.MD:
+  "BASELINE Answer quality: X%"
+  "BASELINE Refusal quality: X%"
+
+COMMIT: git add run_eval.py && git commit -m "week3 d4: answer quality + refusal checks"
+
+----------------------------------------------------------------
+DAY 5: SAVE RESULTS PER RUN — DIFF BEFORE/AFTER
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Every eval run saves a dated result file. When you make changes
+  in Week 4, you compare the new result to the baseline.
+  This is how you know if a change helped or hurt.
+
+CODE ADDITION to run_eval.py:
+  import json
+  from datetime import datetime
+
+  # At the end of run_eval.py, save results:
+  results = {
+      "date": datetime.now().isoformat(),
+      "retrieval_hit_at_3": hit_at_3 / total_answerable,
+      "retrieval_hit_at_5": hit_at_5 / total_answerable,
+      "answer_quality": answer_pass / total_answerable,
+      "refusal_quality": refusal_pass / total_refusals,
+      "per_question": []  # add per-question results
+  }
+
+  date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+  with open(f"phase4/results/eval_{date_str}.json", "w") as f:
+      json.dump(results, f, indent=2)
+  print(f"\nResults saved to phase4/results/eval_{date_str}.json")
+
+VERIFY:
+  Run eval twice. Two dated result files in phase4/results/.
+  Both files have the same scores (baseline is stable).
+
+COMMIT: git add . && git commit -m "week3 d5: eval results saved per run"
+
+----------------------------------------------------------------
+DAY 6: FIND THE 5 WORST FAILURES — CATEGORIZE THEM
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Not all failures are equal. Before fixing anything, understand
+  WHY things fail. The fix depends on the failure type.
+
+  FAILURE CATEGORIES:
+  1. BAD CHUNK: The right document was retrieved, but the relevant
+     text was split across two chunks. The answer is in the gap.
+     FIX: Adjust chunk size or overlap.
+
+  2. BAD QUERY: The question uses different vocabulary than the
+     document. "return policy" vs "refund terms".
+     FIX: Query rewriting, synonym expansion, or hybrid search.
+
+  3. BAD PROMPT: The right chunks were retrieved, but the model
+     didn't extract the answer correctly.
+     FIX: Improve the RAG system prompt.
+
+TASKS:
+  1. Run run_eval.py and identify the 5 lowest-scoring questions
+  2. For each failure, manually check:
+     - Were the right chunks retrieved? (check sources)
+     - Was the answer in the retrieved text? (read the chunks)
+     - Did the model fail to extract it? (read the answer)
+  3. Categorize each as: bad_chunk / bad_query / bad_prompt
+
+WRITE IN NOTES.MD:
+  "5 worst failures:"
+  "1. [question] -> Category: [bad_chunk/bad_query/bad_prompt]"
+  "   Reason: [what went wrong]"
+  "   Planned fix: [what you'll try in Week 4]"
+
+COMMIT: git add notes.md && git commit -m "week3 d6: 5 worst failures categorized"
+
+----------------------------------------------------------------
+DAY 7: BASELINE SCORE RECORDED
+Estimated: 30 min | Cost: $0.00
+----------------------------------------------------------------
+
+TASKS:
+  1. Run run_eval.py one final time
+  2. Record all 4 baseline scores in notes.md
+  3. This is your Week 3 deliverable
+
+WEEK 3 DELIVERABLE CHECKLIST:
+  [ ] tests/rag_eval.yaml has 30+ questions (25 answerable + 5 refusals)
+  [ ] run_eval.py measures retrieval Hit@3, Hit@5, answer quality, refusal quality
+  [ ] Results saved to dated JSON files
+  [ ] Baseline scores recorded in notes.md
+  [ ] 5 worst failures categorized by type
+  [ ] NO changes made to build_index.py or ask.py this week
+
+BASELINE SCORES TO RECORD:
+  Retrieval Hit@3:  ____%
+  Retrieval Hit@5:  ____%
+  Answer quality:   ____%
+  Refusal quality:  ____%
+
+================================================================
+NEXT: week4_hybrid_search_query_improvement.txt
+================================================================

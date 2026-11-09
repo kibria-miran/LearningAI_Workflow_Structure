@@ -1,0 +1,23 @@
+================================================================
+PHASE 7 - WEEK 2: BUILD V1
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : <$1.00
+================================================================
+
+GOAL: Happy path working end to end on real data, baseline recorded.
+
+REUSE (do not rewrite): tracker.py, RAG (phase4), agent loop and
+guardrails (phase5), FastAPI + Docker (phase6).
+
+DAY 1-2  Wire the pipeline: input -> retrieval/tools -> answer/draft.
+DAY 3-4  Run on 10 of your test examples by hand; fix crashes only.
+DAY 5    Run the full test set. Record the baseline: pass rate,
+         refusals handled, cost per task, seconds per task.
+DAY 6    Write the top 5 failures into notes.md with a cause each
+         (bad retrieval / bad prompt / missing tool / bad data).
+
+RULES: no new frameworks, no new patterns. If it works, stop adding.
+
+EXIT WHEN:
+  [ ] Happy path works on real data   [ ] baseline numbers saved
+================================================================

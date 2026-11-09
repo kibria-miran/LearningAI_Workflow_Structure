@@ -1,0 +1,162 @@
+================================================================
+PHASE 4 - WEEK 6: BUFFER + HARDENING
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.05 for the whole week
+================================================================
+
+GOAL: Make your RAG system production-ready. Incremental re-indexing,
+      retry/fallback on provider errors, expanded eval set.
+
+----------------------------------------------------------------
+INCREMENTAL RE-INDEXING
+----------------------------------------------------------------
+
+CONCEPT:
+  Right now, build_index.py re-embeds ALL documents every time.
+  If you add one new file, you re-embed 1000 chunks unnecessarily.
+
+  INCREMENTAL APPROACH:
+  1. Hash each file's content (MD5 or SHA256)
+  2. Store hashes in a manifest file (phase4/results/manifest.json)
+  3. On next run: only re-embed files whose hash changed
+  4. Merge new embeddings with existing index
+
+CODE:
+  # In build_index.py — add incremental logic
+
+  import hashlib, json, os
+
+  MANIFEST_FILE = "phase4/results/manifest.json"
+
+  def file_hash(path: str) -> str:
+      with open(path, "rb") as f:
+          return hashlib.md5(f.read()).hexdigest()
+
+  def load_manifest() -> dict:
+      if os.path.exists(MANIFEST_FILE):
+          with open(MANIFEST_FILE) as f:
+              return json.load(f)
+      return {}
+
+  def save_manifest(manifest: dict):
+      with open(MANIFEST_FILE, "w") as f:
+          json.dump(manifest, f, indent=2)
+
+  # In build_index.py main():
+  manifest = load_manifest()
+  changed_files = []
+  for fname in os.listdir(DATA_DIR):
+      fpath = os.path.join(DATA_DIR, fname)
+      current_hash = file_hash(fpath)
+      if manifest.get(fname) != current_hash:
+          changed_files.append(fname)
+          manifest[fname] = current_hash
+
+  print(f"Changed files: {len(changed_files)} | Unchanged: {len(manifest) - len(changed_files)}")
+  # Only re-embed changed_files, then merge with existing index
+
+VERIFY:
+  Run build_index.py twice. Second run: "Changed files: 0".
+  Add a new file to data/. Third run: "Changed files: 1".
+
+COMMIT: git add . && git commit -m "week6: incremental re-indexing with file hashing"
+
+----------------------------------------------------------------
+RETRY + FALLBACK ON PROVIDER ERRORS
+----------------------------------------------------------------
+
+CONCEPT:
+  In production, the LLM provider will occasionally fail.
+  Your RAG system should handle this gracefully.
+
+  RETRY: try the same call again after a short wait.
+  FALLBACK: if retries fail, try a different model or provider.
+
+  tracker.py already has retry for RateLimitError.
+  Add fallback for other errors (timeout, server error).
+
+CODE ADDITION to tracker.py:
+  # Add fallback model
+  FALLBACK_MODEL = "deepseek-chat"  # or a different provider
+
+  def tracked_call_with_fallback(messages, model="deepseek-chat", **kwargs):
+      """Try primary model, fall back on repeated failure."""
+      try:
+          return tracked_call(messages, model=model, **kwargs)
+      except Exception as e:
+          print(f"Primary model failed: {e}. Trying fallback...")
+          return tracked_call(messages, model=FALLBACK_MODEL, **kwargs)
+
+VERIFY:
+  Temporarily set an invalid API key. tracked_call_with_fallback
+  should attempt the fallback model.
+
+COMMIT: git add . && git commit -m "week6: retry + fallback on provider errors"
+
+----------------------------------------------------------------
+EXPAND EVAL TOWARD 50 QUESTIONS
+----------------------------------------------------------------
+
+CONCEPT:
+  Your Week 3 eval had 30 questions. Expand to 50 for more
+  statistical stability. Focus on the question types that had
+  the most failures in Week 3.
+
+TASKS:
+  1. Add 20 more questions to tests/rag_eval.yaml
+  2. Focus on: the failure categories from Week 3 analysis
+  3. Include 3 more refusal questions (total: 8 refusals)
+  4. Run run_eval.py on the full 50-question set
+  5. Record final scores
+
+WRITE IN NOTES.MD:
+  "Expanded eval: 50 questions (42 answerable + 8 refusals)"
+  "Final scores on 50-question eval:"
+  "  Hit@3: ____% | Hit@5: ____% | Answer: ____% | Refusal: ____%"
+
+COMMIT: git add tests/rag_eval.yaml && git commit -m "week6: eval expanded to 50 questions"
+
+----------------------------------------------------------------
+PHASE 4 EXIT CHECKLIST
+----------------------------------------------------------------
+
+Verify ALL of these before calling Phase 4 done:
+
+  [ ] Index builds from your real docs, re-runnable
+      python build_index.py runs without errors.
+      Running twice produces no duplicates.
+      Incremental re-indexing skips unchanged files.
+
+  [ ] Answers cite sources, refuse when evidence is missing
+      ask.py shows source filenames and page numbers.
+      Low-similarity questions are refused without LLM call.
+      NOT_FOUND returned when context doesn't contain the answer.
+
+  [ ] 30+ question eval, retrieval and answer scored separately
+      run_eval.py measures Hit@3, Hit@5, answer quality, refusal quality.
+      Results saved to dated JSON files.
+
+  [ ] Hybrid beats dense-only on your eval (with numbers)
+      notes.md has: "Hybrid Hit@3: X% vs Dense Hit@3: Y%"
+      The numbers show improvement (or you documented why you reverted).
+
+  [ ] Reranker tested, kept or dropped based on data
+      notes.md has the reranker eval results and your decision.
+
+  [ ] RAGAS run and compared with manual checks
+      Faithfulness and answer relevancy scores recorded.
+      LLM judge spot-checked on 5 questions.
+
+  [ ] You can explain these concepts simply:
+      - "What is chunking and why does overlap matter?"
+      - "What is the difference between dense and BM25 search?"
+      - "What is RRF and why use ranks instead of scores?"
+      - "What does faithfulness measure in RAGAS?"
+      - "Why do we refuse when similarity is low?"
+
+================================================================
+PHASE 4 COMPLETE.
+NEXT: phase5/week1_hand_built_loop.txt
+================================================================

@@ -1,0 +1,396 @@
+================================================================
+PHASE 5 - WEEK 1-2: THE HAND-BUILT LOOP
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day across 2 weeks
+Estimated cost : <$0.10 for both weeks
+================================================================
+
+GOAL: Build an agent loop from scratch using raw API calls.
+      No frameworks. No LangChain. No LangGraph.
+      You must understand the loop before you use a framework.
+
+DELIVERABLE: agent.py running 5 real tasks end to end.
+
+GATE: Phase 3 tool loop works. Phase 4 RAG works.
+      If either is incomplete, finish them first.
+
+----------------------------------------------------------------
+WEEK 1 DAY 1: THINK -> ACT -> OBSERVE LOOP FROM SCRATCH
+Estimated: 90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  An agent is a loop. Each iteration:
+  1. THINK: send current state to the model, get a decision
+  2. ACT: execute the tool the model requested
+  3. OBSERVE: add the tool result to the conversation
+  4. REPEAT until the model says it's done (finish_reason="stop")
+
+  This is identical to Phase 3's tool loop. The difference:
+  - Phase 3: simple task, 2–3 tools, 5 iterations max
+  - Phase 5: complex multi-step tasks, real tools, 8 iterations max
+
+  THE LOOP ENDS WHEN:
+  - finish_reason = "stop" (model gives a plain final answer)
+  - Step cap reached (safety limit)
+  - Error condition (budget, content filter, etc.)
+
+ANALOGY:
+  The agent is a contractor. You give them a job description
+  (system prompt) and a task (user message). They decide what
+  tools to use, use them, and report back when done.
+  You don't micromanage each step — you just check the final result.
+
+TOOLS FOR WEEK 1:
+  read_file(path)       -> read a file from the allowed folder
+  search_docs(query)    -> search your Phase 4 RAG index
+  calculator(expr)      -> evaluate a math expression safely
+
+  SCOPE RULE: read_file is limited to one folder (phase5/workspace/).
+  No shell access. No internet access. No file writes yet.
+
+CODE:
+  # agent.py (Week 1 skeleton)
+  import json, os
+  from tracker import tracked_call
+
+  WORKSPACE = "phase5/workspace"
+  os.makedirs(WORKSPACE, exist_ok=True)
+
+  # --- TOOLS ---
+
+  def read_file(path: str) -> str:
+      """Read a file from the workspace folder only."""
+      safe_path = os.path.join(WORKSPACE, os.path.basename(path))
+      if not os.path.exists(safe_path):
+          return json.dumps({"error": f"File not found: {path}"})
+      with open(safe_path) as f:
+          return json.dumps({"content": f.read()})
+
+  def search_docs(query: str) -> str:
+      """Search the Phase 4 RAG index."""
+      try:
+          # Import from Phase 4
+          import sys
+          sys.path.insert(0, "phase4")
+          from ask import rag_answer_with_guardrail
+          result = rag_answer_with_guardrail(query)
+          return json.dumps({"answer": result["answer"], "sources": result["sources"]})
+      except Exception as e:
+          return json.dumps({"error": str(e)})
+
+  def calculator(expr: str) -> str:
+      """Safely evaluate a math expression."""
+      try:
+          # Only allow safe math operations
+          allowed = set("0123456789+-*/()., ")
+          if not all(c in allowed for c in expr):
+              return json.dumps({"error": "Invalid characters in expression"})
+          result = eval(expr, {"__builtins__": {}})
+          return json.dumps({"result": result})
+      except Exception as e:
+          return json.dumps({"error": str(e)})
+
+  TOOL_MAP = {
+      "read_file": read_file,
+      "search_docs": search_docs,
+      "calculator": calculator
+  }
+
+  tools = [
+      {
+          "type": "function",
+          "function": {
+              "name": "read_file",
+              "description": "Read the contents of a file from the workspace. Use when you need to access a specific file.",
+              "parameters": {
+                  "type": "object",
+                  "properties": {"path": {"type": "string", "description": "Filename to read"}},
+                  "required": ["path"]
+              }
+          }
+      },
+      {
+          "type": "function",
+          "function": {
+              "name": "search_docs",
+              "description": "Search the document knowledge base for information. Use when you need to answer questions from the business documents.",
+              "parameters": {
+                  "type": "object",
+                  "properties": {"query": {"type": "string"}},
+                  "required": ["query"]
+              }
+          }
+      },
+      {
+          "type": "function",
+          "function": {
+              "name": "calculator",
+              "description": "Evaluate a math expression. Use for any arithmetic calculation.",
+              "parameters": {
+                  "type": "object",
+                  "properties": {"expr": {"type": "string", "description": "Math expression, e.g. '45.99 * 1.1'"}},
+                  "required": ["expr"]
+              }
+          }
+      }
+  ]
+
+  SYSTEM_PROMPT = """You are a business assistant with access to tools.
+Use tools to gather information before answering.
+Never invent data — if you don't know, use search_docs or read_file.
+When you have enough information, give a plain final answer.
+Do not call tools unnecessarily."""
+
+  def run_agent(task: str, max_steps: int = 8) -> dict:
+      messages = [
+          {"role": "system", "content": SYSTEM_PROMPT},
+          {"role": "user", "content": task}
+      ]
+      total_cost = 0.0
+      steps_taken = 0
+
+      for step in range(max_steps):
+          steps_taken += 1
+          result = tracked_call(messages, tools=tools)
+          total_cost += result["cost"]
+
+          if result["finish_reason"] == "stop":
+              return {"success": True, "answer": result["content"],
+                      "steps": steps_taken, "cost": total_cost}
+
+          if result["finish_reason"] in ("length", "content_filter"):
+              return {"success": False, "answer": None,
+                      "error": f"finish_reason={result['finish_reason']}",
+                      "steps": steps_taken, "cost": total_cost}
+
+          if result["finish_reason"] == "tool_calls":
+              if result["message"]:
+                  messages.append(result["message"].model_dump())
+              for tc in result["tool_calls"]:
+                  fn_name = tc.function.name
+                  fn_args = json.loads(tc.function.arguments)
+                  print(f"  Step {step+1}: {fn_name}({fn_args})")
+                  tool_result = TOOL_MAP.get(fn_name, lambda **_: json.dumps({"error": f"Unknown tool: {fn_name}"}))(** fn_args)
+                  messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_result})
+
+      return {"success": False, "answer": None,
+              "error": f"Max steps ({max_steps}) reached",
+              "steps": steps_taken, "cost": total_cost}
+
+  if __name__ == "__main__":
+      # Create a test file in workspace
+      with open(f"{WORKSPACE}/products.txt", "w") as f:
+          f.write("Product: Blue Hoodie | SKU: HOODIE-BLU-L | Price: $45.99\n")
+          f.write("Product: Red Mug | SKU: MUG-RED | Price: $12.00\n")
+
+      task = "Read the products file and calculate the total cost of buying 3 Blue Hoodies and 2 Red Mugs."
+      print(f"Task: {task}\n")
+      result = run_agent(task)
+      print(f"\nAnswer: {result['answer']}")
+      print(f"Steps: {result['steps']} | Cost: ${result['cost']:.6f}")
+
+PREDICT BEFORE YOU RUN:
+  How many steps will this task take?
+  Will the agent use both read_file and calculator?
+
+VERIFY:
+  Agent reads the file, then calculates. Final answer is correct.
+  (3 * 45.99) + (2 * 12.00) = $161.97
+
+COMMIT: git add . && git commit -m "week1 d1: hand-built agent loop"
+
+----------------------------------------------------------------
+WEEK 1 DAY 2-3: SCOPE TOOLS + STEP CAP
+Estimated: 60 min | Cost: <$0.01
+----------------------------------------------------------------
+
+SCOPE RULE ENFORCEMENT:
+  read_file must ONLY access phase5/workspace/.
+  If the model tries to read "../phase3/.env", it must fail safely.
+
+  VERIFY:
+    result = read_file("../phase3/.env")
+    -> Should return {"error": "File not found: ../phase3/.env"}
+    -> NOT the actual .env contents
+
+  The os.path.basename() in read_file() already handles this.
+  Test it explicitly.
+
+STEP CAP VERIFICATION:
+  Temporarily set max_steps=2 and give a task that needs 3 steps.
+  The agent should return the "Max steps reached" error.
+  Reset max_steps=8 after testing.
+
+COMMIT: git add . && git commit -m "week1 d2-3: scope enforcement + step cap verified"
+
+----------------------------------------------------------------
+WEEK 2 DAY 1: SYSTEM PROMPT — ROLE, RULES, STOP CONDITIONS
+Estimated: 60 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  A good agent system prompt has 4 parts:
+  1. ROLE: who the agent is and what it does
+  2. RULES: what it must and must not do
+  3. STOP CONDITIONS: when to stop calling tools and give a final answer
+  4. DATA INTEGRITY: "never invent data"
+
+  BAD SYSTEM PROMPT:
+    "You are a helpful assistant."
+
+  GOOD SYSTEM PROMPT:
+    "You are a support assistant for [company].
+     Rules:
+     - Use search_docs before answering any factual question
+     - Use calculator for any arithmetic
+     - Never invent prices, dates, or order details
+     Stop when: you have a complete answer with all required information.
+     Final answer format: plain text, no tool calls."
+
+TASKS:
+  1. Rewrite your system prompt with all 4 parts
+  2. Test with 3 tasks that require different tool combinations
+  3. Verify the agent stops correctly (doesn't keep calling tools after it has the answer)
+
+COMMIT: git add . && git commit -m "week2 d1: system prompt with role, rules, stop conditions"
+
+----------------------------------------------------------------
+WEEK 2 DAY 2: CONVERSATION MEMORY — LAST N TURNS + SUMMARY
+Estimated: 90 min | Cost: <$0.02
+----------------------------------------------------------------
+
+CONCEPT:
+  Long agent sessions accumulate many messages. Sending the full
+  history every call gets expensive and hits context limits.
+
+  SOLUTION: Keep the last N turns in full. Summarize older turns.
+
+  MEMORY STRATEGY:
+  - Keep: last 6 messages (3 turns) in full
+  - Summarize: everything older into a single summary message
+  - The summary is prepended to the messages list
+
+CODE ADDITION to agent.py:
+  def summarize_history(messages: list[dict]) -> str:
+      """Summarize old messages into a compact string."""
+      history_text = "\n".join(
+          f"{m['role'].upper()}: {m.get('content', '[tool call]')[:200]}"
+          for m in messages
+          if m["role"] in ("user", "assistant")
+      )
+      result = tracked_call([
+          {"role": "system", "content": "Summarize this conversation history in 3 sentences. Focus on what was done and what was found."},
+          {"role": "user", "content": history_text}
+      ])
+      return result["content"]
+
+  def trim_messages(messages: list[dict], keep_last: int = 6) -> list[dict]:
+      """Keep system prompt + summary of old messages + last N messages."""
+      system = [m for m in messages if m["role"] == "system"]
+      non_system = [m for m in messages if m["role"] != "system"]
+
+      if len(non_system) <= keep_last:
+          return messages  # no trimming needed
+
+      old = non_system[:-keep_last]
+      recent = non_system[-keep_last:]
+
+      summary = summarize_history(old)
+      summary_msg = {"role": "user", "content": f"[Previous conversation summary: {summary}]"}
+
+      return system + [summary_msg] + recent
+
+VERIFY:
+  Run a long task (5+ steps). After step 4, messages should be trimmed.
+  The agent should still have context from earlier steps via the summary.
+
+COMMIT: git add . && git commit -m "week2 d2: conversation memory with summarization"
+
+----------------------------------------------------------------
+WEEK 2 DAY 3: LONG-TERM NOTES — remember() TOOL
+Estimated: 60 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  The agent can write notes to a file that persist across sessions.
+  This is "long-term memory" — the agent remembers things between runs.
+
+  USE CASES:
+  - Remember user preferences
+  - Track what tasks have been completed
+  - Store intermediate results for multi-session tasks
+
+CODE ADDITION:
+  NOTES_FILE = "phase5/workspace/agent_notes.txt"
+
+  def remember(note: str) -> str:
+      """Write a note to the agent's persistent memory file."""
+      with open(NOTES_FILE, "a") as f:
+          from datetime import datetime
+          f.write(f"[{datetime.now().isoformat()}] {note}\n")
+      return json.dumps({"status": "noted", "note": note})
+
+  def recall() -> str:
+      """Read all notes from the agent's memory file."""
+      if not os.path.exists(NOTES_FILE):
+          return json.dumps({"notes": "No notes yet."})
+      with open(NOTES_FILE) as f:
+          return json.dumps({"notes": f.read()})
+
+  # Add to TOOL_MAP and tools list
+
+VERIFY:
+  Agent calls remember("User prefers metric units").
+  On next run, agent calls recall() and sees the note.
+
+COMMIT: git add . && git commit -m "week2 d3: remember() tool for long-term notes"
+
+----------------------------------------------------------------
+WEEK 2 DAY 4-7: 5 REAL TASKS END TO END
+Estimated: 2 hrs | Cost: <$0.05
+----------------------------------------------------------------
+
+CONCEPT:
+  Run 5 real tasks that use different tool combinations.
+  Each task should complete successfully end to end.
+
+5 TASKS TO RUN:
+  1. "Read products.txt and find the cheapest item."
+     Tools: read_file
+     Expected: Red Mug at $12.00
+
+  2. "Search the docs for how n8n handles errors, then summarize in 3 bullets."
+     Tools: search_docs
+     Expected: 3-bullet summary from your docs
+
+  3. "Read products.txt, calculate the total value of 10 units of each product."
+     Tools: read_file, calculator
+     Expected: correct arithmetic
+
+  4. "Remember that today I reviewed the product catalog."
+     Tools: remember
+     Expected: note written to agent_notes.txt
+
+  5. "Recall your notes and tell me what you've done so far."
+     Tools: recall
+     Expected: reads and reports the note from task 4
+
+VERIFY:
+  All 5 tasks complete successfully.
+  Each task uses the expected tools.
+  No task hits the step cap.
+
+WEEK 1-2 DELIVERABLE CHECKLIST:
+  [ ] agent.py runs 5 real tasks end to end
+  [ ] Tools: read_file (scoped), search_docs (RAG), calculator, remember, recall
+  [ ] Step cap at 8 iterations
+  [ ] System prompt has role, rules, stop conditions, data integrity rule
+  [ ] Conversation memory trims old messages with summarization
+  [ ] All calls logged via tracker.py
+  [ ] notes.md updated with task results and observations
+
+================================================================
+NEXT: week3_4_failure_modes.txt
+================================================================

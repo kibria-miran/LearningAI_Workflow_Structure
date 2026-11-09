@@ -1,0 +1,18 @@
+Payment Policy
+
+We accept the following payment methods:
+- Credit cards: Visa, MasterCard, American Express
+- PayPal: Link your PayPal account for secure payments
+- Bank transfer: For orders over $500
+- Installments: Available for orders over $200 via Klarna
+
+Payment security:
+- All payment information is encrypted using TLS 1.2+
+- We do not store full credit card numbers
+- PCI-DSS compliant payment processing
+- Fraud detection tools monitor all transactions
+
+Payment issues:
+- declined cards: Contact your bank or try an alternative payment method
+- failed transactions: Retry after 15 minutes or use alternative method
+- installment plans: First payment due immediately, remaining spread over 3 months

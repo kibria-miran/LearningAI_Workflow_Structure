@@ -1,0 +1,60 @@
+================================================================
+PHASE 5 - WEEK 7: AGENT PATTERNS (ADD ONE ONLY IF EVAL SHOWS A GAP)
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : <$0.40
+================================================================
+
+GOAL: Add exactly ONE pattern that fixes a failure your Week 6
+      eval found, and prove it with before/after numbers.
+
+DELIVERABLE: one pattern in the agent + eval scores before/after.
+
+RULE: no eval gap = no pattern. Patterns add cost and latency.
+
+----------------------------------------------------------------
+THE 4 PATTERNS
+----------------------------------------------------------------
+
+PLAN-AND-EXECUTE
+  Call 1: model writes a numbered plan (no tools). Then run each
+  step with the normal loop. Fixes: wandering, skipped steps.
+  Costs: +1 call.
+
+REFLECTION
+  After the draft answer, ask once: "Check this against the tool
+  results. List any claim not supported. Reply OK or a corrected
+  answer." Fixes: unsupported claims. Costs: +1 call. ONE pass only.
+
+ROUTER
+  A cheap classify step picks the tool or specialist prompt:
+  "refund question / shipping question / other". Fixes: wrong tool
+  choice. Costs: +1 small call, can reduce total cost.
+
+BEST-OF-N
+  Generate N=3 drafts (temperature 0.7), a judge call picks one.
+  Fixes: high-variance tasks. Costs: ~4x. Rarely worth it.
+
+----------------------------------------------------------------
+PROCEDURE
+----------------------------------------------------------------
+
+  1. Open the last eval run. Group failures by cause.
+  2. Pick the pattern that targets the biggest group.
+  3. Run eval 3 times BEFORE (variance!), record mean pass rate and cost.
+  4. Add the pattern behind a flag: run_agent(..., pattern="reflection").
+  5. Run eval 3 times AFTER. Keep only if pass rate rises by a margin
+     bigger than the run-to-run noise AND cost is acceptable.
+
+PREDICT BEFORE YOU RUN:
+  By how many points will pass rate change? Write it in notes.md.
+
+EXPLAIN IT BACK:
+  "Why run the eval 3 times instead of once?"
+
+COMMIT: git add . && git commit -m "week7: pattern X, before/after"
+
+EXIT WHEN:
+  [ ] One pattern kept or rejected, with numbers in notes.md
+================================================================

@@ -1,0 +1,738 @@
+================================================================
+PHASE 3 - WEEK 4: TOOL CALLING + LOOP
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.10 for the whole week
+================================================================
+
+GOAL: The model can call your functions. You build the loop that
+      connects model decisions to real actions. Every call is logged.
+
+IMPORTANT: All API calls in Week 4 go through tracker.py.
+  Use tracked_call(..., tools=tools) everywhere.
+  This ensures every loop iteration is logged with cost.
+
+tracker.py signature (reference):
+  tracked_call(messages, model="deepseek-chat", tools=None, **kwargs)
+  Returns: success, content, finish_reason, tool_calls, message,
+           input_tokens, output_tokens, cost, error
+
+----------------------------------------------------------------
+DAY 1: ONE TOOL — CONFIRM MODEL RETURNS A TOOL CALL
+Estimated: 60 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  Tool calling lets the model request that YOUR code runs a
+  function and returns the result.
+
+  The model doesn't run code. It can't. What it does is say:
+  "I need the result of function X with these arguments."
+  Your code runs the function and sends the result back.
+
+THE FLOW (memorize this):
+  1. You send messages + tool definitions to the model
+  2. Model decides it needs a tool -> finish_reason = "tool_calls"
+  3. Your code reads the tool name and arguments
+  4. Your code executes the function
+  5. Your code sends the result back to the model
+  6. Model uses the result to form a final answer
+
+ANALOGY:
+  The model is a manager who can't leave their desk.
+  Tools are employees who can go do things.
+  Manager: "Go check the warehouse for item #4521."
+  Employee (your code): checks, comes back with the answer.
+  Manager: uses that answer to respond to the customer.
+
+HOW YOU DEFINE A TOOL:
+  A JSON schema with: name, description (when to use it),
+  and parameters (what arguments it takes).
+  The model reads the description to decide when to call it.
+  Vague description = wrong tool selected. Be specific.
+
+CODE:
+  # day1_one_tool.py
+  from dotenv import load_dotenv
+  import os, json
+  from tracker import tracked_call
+
+  load_dotenv()
+
+  tools = [{
+      "type": "function",
+      "function": {
+          "name": "get_order_status",
+          "description": "Look up the current status of a customer order by order ID. Use this when the user asks about an order, shipment, or delivery.",
+          "parameters": {
+              "type": "object",
+              "properties": {
+                  "order_id": {"type": "string", "description": "The order ID, e.g. '4521'"}
+              },
+              "required": ["order_id"]
+          }
+      }
+  }]
+
+  messages = [{"role": "user", "content": "What's the status of order 4521?"}]
+
+  result = tracked_call(messages, tools=tools)
+
+  print("finish_reason:", result["finish_reason"])
+  print("cost:         ", result["cost"])
+
+  if result["finish_reason"] == "tool_calls":
+      # tool_calls is a list; each item has .function.name and .function.arguments
+      # It is None when finish_reason is "stop" — always check finish_reason first
+      tc = result["tool_calls"][0]
+      print("Model wants to call:", tc.function.name)
+      print("With arguments:     ", tc.function.arguments)
+  else:
+      print("Model answered directly:", result["content"])
+
+PREDICT BEFORE YOU RUN:
+  What finish_reason do you expect?
+  What argument will the model pass to get_order_status?
+
+VERIFY:
+  finish_reason = "tool_calls"
+  tool name = "get_order_status"
+  arguments contains order_id = "4521"
+
+IF finish_reason IS "stop" INSTEAD OF "tool_calls":
+  -> The model answered without using the tool
+  -> Improve the tool description: add "Use this when the user mentions an order number"
+  -> Or make the question more explicit: "Use the get_order_status tool to check order 4521"
+
+EXPLAIN IT BACK:
+  "Why does the model return tool_calls instead of just answering?"
+
+COMMIT: git add . && git commit -m "week4 d1: one tool, model returns tool_calls"
+
+----------------------------------------------------------------
+DAY 2: EXECUTE THE TOOL, RETURN RESULT, GET FINAL ANSWER
+Estimated: 60–90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  After the model requests a tool call, you run the function
+  and send the result back in a message with role="tool".
+  The model then uses that result to write its final answer.
+
+  IMPORTANT — appending the assistant message:
+  tracked_call() returns "message" as a ChatCompletionMessage object.
+  Use message.model_dump() to convert it to a dict before appending.
+  This works with both the SDK and raw HTTP requests.
+  Guard against None: only call model_dump() if message is not None.
+  Verify by printing the dict on your first run — confirm tool_calls
+  is serialized as a list of dicts inside it.
+
+THE TOOL RESULT MESSAGE:
+  {
+    "role": "tool",
+    "tool_call_id": "the id from the model's tool_calls",
+    "content": "the result of your function as a string (JSON)"
+  }
+  The tool_call_id links the result to the specific request.
+
+CODE:
+  # day2_execute_tool.py
+  from dotenv import load_dotenv
+  import os, json
+  from tracker import tracked_call
+
+  load_dotenv()
+
+  ORDERS = {
+      "4521": {"status": "shipped", "eta": "Dec 10", "item": "Blue Hoodie"},
+      "9988": {"status": "processing", "eta": "Dec 15", "item": "Red Mug"},
+      "1234": {"status": "delivered", "eta": None, "item": "Wireless Keyboard"}
+  }
+
+  def get_order_status(order_id: str) -> str:
+      order = ORDERS.get(order_id)
+      if not order:
+          return json.dumps({"error": f"Order {order_id} not found"})
+      return json.dumps(order)
+
+  tools = [{
+      "type": "function",
+      "function": {
+          "name": "get_order_status",
+          "description": "Look up the current status of a customer order by order ID.",
+          "parameters": {
+              "type": "object",
+              "properties": {"order_id": {"type": "string"}},
+              "required": ["order_id"]
+          }
+      }
+  }]
+
+  messages = [{"role": "user", "content": "What's the status of order 4521?"}]
+
+  # Step 1: Get tool call request
+  result = tracked_call(messages, tools=tools)
+  print(f"Step 1 cost: ${result['cost']:.6f}")
+
+  if result["finish_reason"] == "tool_calls":
+      tc = result["tool_calls"][0]
+      args = json.loads(tc.function.arguments)
+
+      # Step 2: Execute the function
+      tool_result = get_order_status(args["order_id"])
+      print("Tool result:", tool_result)
+
+      # Step 3: Add model's message + tool result to messages
+      # Guard against None before calling model_dump()
+      if result["message"] is not None:
+          messages.append(result["message"].model_dump())
+      messages.append({
+          "role": "tool",
+          "tool_call_id": tc.id,
+          "content": tool_result
+      })
+
+      # Step 4: Get final answer
+      final = tracked_call(messages, tools=tools)
+      print(f"Step 2 cost: ${final['cost']:.6f}")
+      print("\nFinal answer:", final["content"])
+
+PREDICT BEFORE YOU RUN:
+  What will the final answer say about order 4521?
+  Will the model mention the ETA?
+
+VERIFY:
+  Tool result printed. Natural language final answer using the order data.
+  Two cost entries in usage.jsonl (one per tracked_call).
+
+IF FINAL ANSWER IGNORES THE TOOL RESULT:
+  -> Check that tool_call_id in the tool message matches tc.id exactly
+  -> Check that the tool message role is "tool" not "user"
+
+EXPLAIN IT BACK:
+  "Why do we need tool_call_id in the tool result message?"
+
+COMMIT: git add . && git commit -m "week4 d2: tool executed, result returned, final answer"
+
+----------------------------------------------------------------
+DAY 3: BUILD THE LOOP
+Estimated: 90 min | Cost: <$0.02
+----------------------------------------------------------------
+
+CONCEPT:
+  Some tasks require multiple tool calls in sequence.
+  You need a loop that keeps going until:
+  - finish_reason is "stop" (model is done), OR
+  - You've hit the iteration cap (safety limit), OR
+  - finish_reason is "length" or "content_filter" (errors)
+
+  The cap is critical. Without it, a confused model could loop
+  forever, calling tools repeatedly and draining your budget.
+
+ANALOGY:
+  The loop is like a project manager delegating tasks.
+  Manager assigns task -> employee does it -> reports back ->
+  manager assigns next task -> repeat until done.
+  The cap is the deadline: after 5 rounds, we stop regardless.
+
+CODE:
+  # day3_loop.py
+  from dotenv import load_dotenv
+  import os, json
+  from tracker import tracked_call
+
+  load_dotenv()
+
+  ORDERS = {
+      "4521": {"status": "shipped", "eta": "Dec 10", "item": "Blue Hoodie", "customer": "John"}
+  }
+
+  def get_order_status(order_id: str) -> str:
+      order = ORDERS.get(order_id)
+      return json.dumps(order if order else {"error": f"Order {order_id} not found"})
+
+  def draft_email(customer_name: str, message: str) -> str:
+      return json.dumps({
+          "draft": f"Dear {customer_name},\n\n{message}\n\nBest regards,\nSupport Team"
+      })
+
+  TOOL_MAP = {
+      "get_order_status": get_order_status,
+      "draft_email": draft_email
+  }
+
+  tools = [
+      {
+          "type": "function",
+          "function": {
+              "name": "get_order_status",
+              "description": "Look up the current status of a customer order by order ID. Use when asked about orders, shipments, or deliveries.",
+              "parameters": {
+                  "type": "object",
+                  "properties": {"order_id": {"type": "string"}},
+                  "required": ["order_id"]
+              }
+          }
+      },
+      {
+          "type": "function",
+          "function": {
+              "name": "draft_email",
+              "description": "Draft a reply email to a customer. Use after you have the information needed to respond.",
+              "parameters": {
+                  "type": "object",
+                  "properties": {
+                      "customer_name": {"type": "string"},
+                      "message": {"type": "string", "description": "The email body content"}
+                  },
+                  "required": ["customer_name", "message"]
+              }
+          }
+      }
+  ]
+
+  def run_agent(user_message: str, max_iterations: int = 5) -> str:
+      """
+      Run the agent loop until done or max_iterations reached.
+      Every iteration is logged via tracked_call.
+      """
+      messages = [
+          {"role": "system", "content": "You are a support assistant. Use tools to look up orders and draft replies."},
+          {"role": "user", "content": user_message}
+      ]
+      total_cost = 0.0
+
+      for iteration in range(max_iterations):
+          print(f"\n--- Iteration {iteration + 1} ---")
+          result = tracked_call(messages, tools=tools)
+          total_cost += result["cost"]
+          print(f"finish_reason: {result['finish_reason']} | cost: ${result['cost']:.6f}")
+
+          if result["finish_reason"] == "stop":
+              print(f"Total cost: ${total_cost:.6f}")
+              return result["content"]
+
+          if result["finish_reason"] == "length":
+              return "ERROR: Response truncated mid-loop. Increase max_tokens."
+
+          if result["finish_reason"] == "content_filter":
+              return "ERROR: Content filtered mid-loop. Review your prompts."
+
+          if result["finish_reason"] == "tool_calls":
+              # tool_calls is guaranteed non-None here because finish_reason is "tool_calls"
+              if result["message"] is not None:
+                  messages.append(result["message"].model_dump())
+              for tc in result["tool_calls"]:
+                  fn_name = tc.function.name
+                  fn_args = json.loads(tc.function.arguments)
+                  print(f"Calling: {fn_name}({fn_args})")
+
+                  tool_result = TOOL_MAP[fn_name](**fn_args)
+                  print(f"Result:  {tool_result}")
+
+                  messages.append({
+                      "role": "tool",
+                      "tool_call_id": tc.id,
+                      "content": tool_result
+                  })
+
+      return f"ERROR: Max iterations ({max_iterations}) reached without final answer."
+
+  answer = run_agent("Look up order 4521 and draft a reply to the customer about their shipment status.")
+  print("\n=== FINAL ANSWER ===")
+  print(answer)
+
+PREDICT BEFORE YOU RUN:
+  How many iterations will this take?
+  What will the draft email say?
+
+VERIFY:
+  2 iterations: one for get_order_status, one for draft_email.
+  Final answer is a natural language response.
+  usage.jsonl has 2 new entries with costs.
+
+IF THE LOOP HITS MAX ITERATIONS:
+  -> The model may be calling tools repeatedly without stopping
+  -> Add "Once you have drafted the email, stop and return it." to system prompt
+
+EXPLAIN IT BACK:
+  "Why does the loop need a cap? What happens without one?"
+
+COMMIT: git add . && git commit -m "week4 d3: agent loop with iteration cap and logging"
+
+----------------------------------------------------------------
+DAY 4: 2–3 TOOLS, MODEL PICKS CORRECTLY
+Estimated: 60–90 min | Cost: <$0.02
+----------------------------------------------------------------
+
+CONCEPT:
+  The model decides WHICH tool to call based on the description.
+  This is why descriptions matter so much.
+
+  BAD:  "description": "Gets price information"
+  GOOD: "description": "Get the current price of a product by SKU.
+         Use when the user asks about cost or pricing.
+         Do not use for order status."
+
+3 TOOLS:
+  get_order_status -> given order_id, return order details
+  get_price        -> given product_sku, return current price
+  draft_email      -> given customer_name + message, return draft
+
+CODE:
+  # day4_multi_tool.py
+  # Extend day3_loop.py with get_price
+
+  PRODUCTS = {
+      "HOODIE-BLU-L": {"name": "Blue Hoodie Large", "price": 45.99},
+      "MUG-RED":       {"name": "Red Ceramic Mug",   "price": 12.00},
+      "KB-WIRELESS":   {"name": "Wireless Keyboard",  "price": 79.99}
+  }
+
+  def get_price(product_sku: str) -> str:
+      product = PRODUCTS.get(product_sku.upper())
+      return json.dumps(product if product else {"error": f"SKU {product_sku} not found"})
+
+  # Add to TOOL_MAP: "get_price": get_price
+  # Add to tools list:
+  # {
+  #   "type": "function",
+  #   "function": {
+  #     "name": "get_price",
+  #     "description": "Get the current price of a product by its SKU code. Use when the user asks about cost or pricing. Do not use for order status.",
+  #     "parameters": {
+  #       "type": "object",
+  #       "properties": {"product_sku": {"type": "string", "description": "Product SKU, e.g. 'HOODIE-BLU-L'"}},
+  #       "required": ["product_sku"]
+  #     }
+  #   }
+  # }
+
+  # Test with these 3 prompts and verify correct tool selection:
+  TEST_PROMPTS = [
+      "What's the status of order 4521?",                              # -> get_order_status
+      "How much does HOODIE-BLU-L cost?",                              # -> get_price
+      "Look up order 4521 and draft a reply to the customer."          # -> get_order_status + draft_email
+  ]
+
+PREDICT BEFORE YOU RUN:
+  Which tool will each prompt trigger?
+
+VERIFY:
+  Each prompt triggers the correct tool(s).
+
+IF THE MODEL PICKS THE WRONG TOOL:
+  -> Improve the description: add "Use this when..." and "Do not use for..."
+  -> Make descriptions mutually exclusive
+
+WRITE IN NOTES.MD:
+  "Which prompts caused wrong tool selection? What description change fixed it?"
+
+COMMIT: git add . && git commit -m "week4 d4: 3 tools, model picks correctly"
+
+----------------------------------------------------------------
+DAY 5: ERROR HANDLING — BAD ARGS, UNKNOWN TOOL, TOOL CRASH
+Estimated: 60–90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  Tools fail. The model sometimes passes wrong argument types,
+  calls a tool that doesn't exist, or your function throws an
+  exception. Handle all 3 without crashing.
+
+  Professional approach: catch the error, send it back to the
+  model as a tool result. The model often self-corrects.
+
+THE 3 ERROR TYPES:
+
+  ERROR 1 — BAD ARGS:
+    Model passes {"order_id": 4521} (integer) but function expects string.
+    FIX: Wrap function execution in try/except TypeError.
+
+  ERROR 2 — UNKNOWN TOOL:
+    Model hallucinates a tool name not in TOOL_MAP.
+    FIX: Check if fn_name is in TOOL_MAP before calling.
+
+  ERROR 3 — TOOL CRASH:
+    Your function raises an exception (DB down, API timeout).
+    FIX: Wrap in try/except, return {"error": str(e)} as JSON.
+
+CODE:
+  # day5_error_handling.py
+
+  def safe_execute(fn_name: str, fn_args: dict) -> str:
+      """
+      Safely execute a tool. Always returns a JSON string. Never raises.
+      """
+      if fn_name not in TOOL_MAP:
+          return json.dumps({"error": f"Unknown tool: '{fn_name}'. Available: {list(TOOL_MAP.keys())}"})
+      try:
+          return TOOL_MAP[fn_name](**fn_args)
+      except TypeError as e:
+          return json.dumps({"error": f"Bad arguments for '{fn_name}': {e}"})
+      except Exception as e:
+          return json.dumps({"error": f"Tool '{fn_name}' crashed: {e}"})
+
+  # Test all 3 error types explicitly:
+
+  # ERROR 1 — bad args
+  print(safe_execute("get_order_status", {"wrong_key": "123"}))
+
+  # ERROR 2 — unknown tool
+  print(safe_execute("nonexistent_tool", {}))
+
+  # ERROR 3 — tool crash (use this broken tool for testing)
+  def _broken_tool_for_testing() -> str:
+      raise RuntimeError("Simulated DB outage")
+
+  TOOL_MAP["_broken_tool_for_testing"] = _broken_tool_for_testing
+  print(safe_execute("_broken_tool_for_testing", {}))
+
+  # Always remove test tools after testing — otherwise the model
+  # may try to call them on subsequent runs.
+  del TOOL_MAP["_broken_tool_for_testing"]
+
+PREDICT BEFORE YOU RUN:
+  What JSON will safe_execute return for each of the 3 cases?
+
+VERIFY:
+  Each call returns a JSON string with an "error" key.
+  None of them raise a Python exception.
+
+IF safe_execute RAISES AN EXCEPTION:
+  -> The outer except Exception as e is missing or misindented
+
+EXPLAIN IT BACK:
+  "Why do we return an error JSON string instead of raising an exception?"
+
+COMMIT: git add . && git commit -m "week4 d5: safe_execute handles all 3 error types"
+
+----------------------------------------------------------------
+DAY 6: HUMAN APPROVAL FOR RISKY TOOLS
+Estimated: 60 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  Some tools have real-world consequences that can't be undone:
+  sending an email, deleting a record, charging a customer.
+  For these, pause the loop and ask the human: approve? (y/n)
+
+  This is "human-in-the-loop" — a key safety feature in any
+  production AI system.
+
+ANALOGY:
+  A junior employee who can research anything independently but
+  needs manager approval before sending any external communication.
+
+SAFE vs RISKY:
+  SAFE (no approval): get_order_status, get_price, search_*
+  RISKY (needs approval): send_email, delete_record, process_refund
+
+CODE:
+  # Add to run_agent():
+
+  RISKY_TOOLS = {"send_email", "delete_record", "process_refund"}
+
+  def _get_approval(fn_name: str, fn_args: dict) -> bool:
+      print(f"\n⚠️  APPROVAL NEEDED")
+      print(f"Tool: {fn_name}")
+      print(f"Args: {json.dumps(fn_args, indent=2)}")
+      return input("Approve? (y/n): ").strip().lower() == "y"
+
+  # Inside the tool_calls loop — collapsed to one messages.append:
+  for tc in result["tool_calls"]:
+      fn_name = tc.function.name
+      fn_args = json.loads(tc.function.arguments)
+
+      if fn_name in RISKY_TOOLS and not _get_approval(fn_name, fn_args):
+          # Send rejection back to model so it knows the action was blocked.
+          # The model will see this on the next iteration and respond accordingly.
+          tool_result = json.dumps({"status": "rejected", "reason": "User did not approve."})
+      else:
+          tool_result = safe_execute(fn_name, fn_args)
+
+      messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_result})
+
+PREDICT BEFORE YOU RUN:
+  If you reject the draft_email action, what will the model do next?
+
+VERIFY:
+  When a risky tool is called, you see the approval prompt.
+  Typing "n" sends a rejection back to the model.
+  The model should acknowledge the rejection in its final answer.
+
+IF THE APPROVAL PROMPT DOESN'T APPEAR:
+  -> fn_name is not in RISKY_TOOLS (check exact spelling, case-sensitive)
+
+EXPLAIN IT BACK:
+  "Why do we send the rejection back to the model instead of just stopping?"
+
+COMMIT: git add . && git commit -m "week4 d6: human approval for risky tools"
+
+----------------------------------------------------------------
+DAY 7: BUILD ASSISTANT.PY + PYDANTIC FINAL OUTPUT + RUN ALL TESTS
+Estimated: 90–120 min | Cost: <$0.02
+----------------------------------------------------------------
+
+CONCEPT:
+  assistant.py is your Week 4 deliverable. It combines everything
+  into one clean, complete file for a real business task.
+
+  It also ties Week 3 (Pydantic) to Week 4 (tools): the agent's
+  final answer is parsed into a structured Pydantic model.
+  This satisfies the exit checklist item "structured output somewhere."
+
+  Don't copy-paste from previous days. Build it from scratch.
+  This is how you know you actually learned it.
+
+ASSISTANT.PY SKELETON (fill in the TODOs):
+
+  # assistant.py
+  """
+  Support assistant for order lookup and reply drafting.
+  Tools: get_order_status, get_price, draft_email
+  Features: agent loop (max 5), error handling, human approval,
+            Pydantic-validated final output
+  """
+  from dotenv import load_dotenv
+  from pydantic import BaseModel
+  from typing import Optional
+  import os, json
+  from tracker import tracked_call
+
+  load_dotenv()
+
+  # TODO: Define ORDERS and PRODUCTS dicts (fake data is fine)
+
+  # TODO: Implement get_order_status(order_id) -> str (JSON)
+  # TODO: Implement get_price(product_sku) -> str (JSON)
+  # TODO: Implement draft_email(customer_name, message) -> str (JSON)
+
+  TOOL_MAP = {
+      # TODO: map tool names to functions
+  }
+
+  RISKY_TOOLS = {"draft_email"}
+
+  tools = [
+      # TODO: define all 3 tool schemas with clear descriptions
+  ]
+
+  def safe_execute(fn_name: str, fn_args: dict) -> str:
+      # TODO: handle unknown tool, bad args, tool crash
+      pass
+
+  def _get_approval(fn_name: str, fn_args: dict) -> bool:
+      print(f"\n⚠️  APPROVAL NEEDED: {fn_name}")
+      print(f"Args: {json.dumps(fn_args, indent=2)}")
+      return input("Approve? (y/n): ").strip().lower() == "y"
+
+  # Pydantic model for the agent's final structured output
+  class SupportResponse(BaseModel):
+      summary: str                    # one-sentence summary of what was done
+      tools_used: list                # list of tool names called
+      draft_provided: bool            # was a draft email produced?
+      confidence: Optional[float] = None  # 0.0–1.0, model's self-reported confidence
+
+  def run_agent(user_message: str, max_iterations: int = 5) -> dict:
+      """
+      Run the agent loop. Returns a validated SupportResponse dict.
+      """
+      messages = [
+          {"role": "system", "content": (
+              "You are a support assistant. Use tools to look up orders and draft replies. "
+              "When you are done, respond with a JSON object matching this schema exactly: "
+              '{"summary": "string", "tools_used": ["tool1", "tool2"], '
+              '"draft_provided": true, "confidence": 0.85}. '
+              "No explanation. Just the JSON."
+          )},
+          {"role": "user", "content": user_message}
+      ]
+      total_cost = 0.0
+      tools_called = []
+
+      for iteration in range(max_iterations):
+          result = tracked_call(messages, tools=tools)
+          total_cost += result["cost"]
+
+          if result["finish_reason"] == "stop":
+              # Parse final answer into SupportResponse
+              try:
+                  data = json.loads(result["content"])
+                  # Override the model's self-reported tools_used with the actual
+                  # list we tracked. The model may misremember which tools it called.
+                  data["tools_used"] = tools_called
+                  validated = SupportResponse(**data)
+                  print(f"\nTotal cost: ${total_cost:.6f}")
+                  return {"success": True, "response": validated.model_dump(), "error": None}
+              except Exception as e:
+                  return {"success": False, "response": None, "error": f"Final output parse failed: {e}. Raw: {result['content']}"}
+
+          if result["finish_reason"] == "length":
+              return {"success": False, "response": None, "error": "Response truncated mid-loop."}
+
+          if result["finish_reason"] == "content_filter":
+              return {"success": False, "response": None, "error": "Content filtered mid-loop."}
+
+          if result["finish_reason"] == "tool_calls":
+              if result["message"] is not None:
+                  messages.append(result["message"].model_dump())
+              for tc in result["tool_calls"]:
+                  fn_name = tc.function.name
+                  fn_args = json.loads(tc.function.arguments)
+                  tools_called.append(fn_name)
+
+                  if fn_name in RISKY_TOOLS and not _get_approval(fn_name, fn_args):
+                      tool_result = json.dumps({"status": "rejected", "reason": "User did not approve."})
+                  else:
+                      tool_result = safe_execute(fn_name, fn_args)
+
+                  messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_result})
+
+      return {"success": False, "response": None, "error": f"Max iterations ({max_iterations}) reached."}
+
+
+  if __name__ == "__main__":
+      result = run_agent("Look up order 4521 and draft a reply about the shipment status.")
+      if result["success"]:
+          print("\nStructured response:")
+          print(json.dumps(result["response"], indent=2))
+      else:
+          print("Error:", result["error"])
+
+AFTER BUILDING ASSISTANT.PY:
+  1. python run_tests.py -> all tests should still pass
+  2. Open results/usage.jsonl -> review this week's spending
+  3. Calculate total Week 4 cost:
+       cat results/usage.jsonl | python3 -c "
+       import sys, json
+       lines = [json.loads(l) for l in sys.stdin if l.strip()]
+       print(f'Total: \${sum(l[\"cost\"] for l in lines):.6f} across {len(lines)} calls')
+       "
+  4. Write the number in notes.md.
+
+QUESTIONS TO ANSWER IN NOTES.MD:
+  - What is the agent loop and why does it need a cap?
+  - What are the 3 tool error types and how do you handle each?
+  - Why do risky tools need human approval?
+  - What did Week 4 cost in total?
+  - What would you build differently if you started over?
+
+WEEK 4 DELIVERABLE CHECKLIST:
+  [ ] assistant.py built from scratch (not copy-pasted)
+  [ ] 3 tools with clear, specific descriptions
+  [ ] Loop capped at 5 iterations
+  [ ] length and content_filter handled in loop
+  [ ] All 3 error types handled in safe_execute
+  [ ] _broken_tool_for_testing tested and removed
+  [ ] Human approval works for risky tools
+  [ ] Rejection sent back to model (not just skipped)
+  [ ] Final answer parsed into SupportResponse Pydantic model
+  [ ] Every loop iteration logged via tracked_call
+  [ ] All tests pass (python run_tests.py exits 0)
+  [ ] usage.jsonl reviewed, total cost noted
+
+================================================================
+NEXT: week5_buffer_capstone_prep.txt
+================================================================

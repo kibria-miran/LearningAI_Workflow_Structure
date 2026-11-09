@@ -1,0 +1,348 @@
+================================================================
+PHASE 4 - WEEK 5: RERANKER + RAGAS
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.10 for the whole week
+================================================================
+
+GOAL: Test a reranker. Run RAGAS automated evaluation.
+      Profile each stage of your pipeline. Produce a final
+      retriever config and eval report.
+
+DELIVERABLE: final retriever config + eval report in notes.md
+
+----------------------------------------------------------------
+DAY 1: RERANKER CONCEPT
+Estimated: 45 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Your current pipeline: query -> retrieve top-20 -> pass top-5 to LLM.
+  A reranker adds a step: query -> retrieve top-20 -> RERANK -> pass top-4 to LLM.
+
+  WHY RERANK?
+  Embedding models (MiniLM) are fast but imprecise. They find
+  "roughly relevant" chunks. A cross-encoder reranker is slower
+  but more precise — it reads the query AND the chunk together
+  and scores their relevance jointly.
+
+  ANALOGY:
+  Embedding search = a librarian who quickly scans book spines.
+  Reranker = a librarian who reads the first page of each book.
+  The second pass is slower but more accurate.
+
+  WHEN RERANKERS HURT:
+  Rerankers can hurt on exact identifier queries (order IDs,
+  product codes). The cross-encoder may not understand that
+  "ORD-4521" is more relevant than a paragraph about orders.
+  Always test before keeping.
+
+  OPTIONS:
+  - Cohere Rerank API (paid, fast, high quality)
+  - cross-encoder/ms-marco-MiniLM-L-6-v2 (free, local, slower)
+
+  For this week: use the local cross-encoder (free).
+
+  pip install sentence-transformers  # already installed
+
+WRITE IN NOTES.MD:
+  "Reranker: cross-encoder/ms-marco-MiniLM-L-6-v2 (local)"
+  "Expected latency increase: [your estimate]"
+
+----------------------------------------------------------------
+DAY 2: TRY THE RERANKER — MEASURE LATENCY
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CODE:
+  # day2_reranker.py
+  from sentence_transformers import CrossEncoder
+  import time
+  from day2_rrf import rrf_retrieve
+
+  reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+  def rerank(query: str, chunks: list[dict], top_n: int = 4) -> list[dict]:
+      """Rerank chunks using cross-encoder. Returns top_n."""
+      pairs = [(query, c["text"]) for c in chunks]
+      scores = reranker.predict(pairs)
+      ranked = sorted(zip(scores, chunks), key=lambda x: x[0], reverse=True)
+      results = []
+      for score, chunk in ranked[:top_n]:
+          chunk = chunk.copy()
+          chunk["rerank_score"] = float(score)
+          results.append(chunk)
+      return results
+
+  # Compare with and without reranker
+  query = "How do I set up a webhook in n8n?"
+
+  start = time.time()
+  dense_results = rrf_retrieve(query, k=5)
+  dense_time = time.time() - start
+
+  start = time.time()
+  candidates = rrf_retrieve(query, k=20)
+  reranked = rerank(query, candidates, top_n=4)
+  rerank_time = time.time() - start
+
+  print(f"Without reranker ({dense_time*1000:.0f}ms):")
+  for r in dense_results:
+      print(f"  {r['source']} p{r['page']}")
+
+  print(f"\nWith reranker ({rerank_time*1000:.0f}ms):")
+  for r in reranked:
+      print(f"  {r['rerank_score']:.3f} | {r['source']} p{r['page']}")
+
+PREDICT BEFORE YOU RUN:
+  How much slower will the reranker be?
+  Will the top result change after reranking?
+
+VERIFY:
+  Reranker runs. Latency measured. Some results may reorder.
+
+WRITE IN NOTES.MD:
+  "Reranker latency: Xms (vs Yms without)"
+  "Top result changed: yes/no"
+
+COMMIT: git add . && git commit -m "week5 d2: reranker tested, latency measured"
+
+----------------------------------------------------------------
+DAY 3: KEEP OR DROP — EVAL DECIDES
+Estimated: 60 min | Cost: <$0.03
+----------------------------------------------------------------
+
+CONCEPT:
+  Run run_eval.py with the reranker enabled.
+  Compare to your best score from Week 4.
+
+  KEEP if: Hit@3 or answer quality improves.
+  DROP if: scores stay the same or get worse.
+
+  The reranker adds latency. If it doesn't improve quality,
+  the latency cost isn't worth it.
+
+TASKS:
+  1. Update run_eval.py to use reranker (retrieve 20, rerank to 4)
+  2. Run eval
+  3. Compare to Week 4 best scores
+  4. Decision: keep or drop
+
+WRITE IN NOTES.MD:
+  "Reranker eval:"
+  "  Hit@3: ____% (Week 4 best: ____%, delta: ____)"
+  "  Answer quality: ____% (Week 4 best: ____%, delta: ____)"
+  "Decision: [keep / drop] because [reason]"
+
+COMMIT: git add . && git commit -m "week5 d3: reranker eval, decision: [keep/drop]"
+
+----------------------------------------------------------------
+DAY 4: RAGAS — FAITHFULNESS + ANSWER RELEVANCY
+Estimated: 90 min | Cost: <$0.05
+----------------------------------------------------------------
+
+CONCEPT:
+  RAGAS is an automated RAG evaluation framework.
+  It uses an LLM to judge answer quality on two dimensions:
+
+  FAITHFULNESS: Is every claim in the answer supported by the
+  retrieved context? Score 0–1. Low score = hallucination.
+
+  ANSWER RELEVANCY: Does the answer actually address the question?
+  Score 0–1. Low score = off-topic answer.
+
+  pip install ragas datasets
+
+  NOTE: RAGAS makes LLM calls to judge answers. It costs money.
+  Run it on a sample of 10–15 questions, not all 30.
+
+CODE:
+  # day4_ragas.py
+  from ragas import evaluate
+  from ragas.metrics import faithfulness, answer_relevancy
+  from datasets import Dataset
+  from day2_first_rag import rag_answer_with_guardrail
+  from day1_retrieval import retrieve
+  import yaml
+
+  with open("tests/rag_eval.yaml") as f:
+      eval_questions = yaml.safe_load(f)
+
+  # Sample 10 answerable questions
+  sample = [q for q in eval_questions if q["question_type"] != "refusal"][:10]
+
+  data = {"question": [], "answer": [], "contexts": [], "ground_truth": []}
+
+  for q in sample:
+      result = rag_answer_with_guardrail(q["question"])
+      chunks = retrieve(q["question"], k=4)
+      data["question"].append(q["question"])
+      data["answer"].append(result["answer"] or "")
+      data["contexts"].append([c["text"] for c in chunks])
+      data["ground_truth"].append(" ".join(q.get("key_facts", [])))
+
+  dataset = Dataset.from_dict(data)
+  scores = evaluate(dataset, metrics=[faithfulness, answer_relevancy])
+  print(scores)
+
+PREDICT BEFORE YOU RUN:
+  Will faithfulness be high (answers stick to context)?
+  Will answer relevancy be high (answers address the question)?
+
+VERIFY:
+  RAGAS scores printed. Both metrics between 0 and 1.
+
+WRITE IN NOTES.MD:
+  "RAGAS results (10 questions):"
+  "  Faithfulness: ____"
+  "  Answer relevancy: ____"
+  "Manual spot-check: [did RAGAS agree with your manual assessment?]"
+
+COMMIT: git add . && git commit -m "week5 d4: ragas eval run"
+
+----------------------------------------------------------------
+DAY 5: LLM-AS-JUDGE — SPOT-CHECK THE JUDGE
+Estimated: 60 min | Cost: <$0.02
+----------------------------------------------------------------
+
+CONCEPT:
+  RAGAS uses an LLM to judge answers. But LLM judges can be wrong.
+  You must spot-check the judge's decisions against your own judgment.
+
+  SPOT-CHECK PROCESS:
+  1. Pick 5 questions where RAGAS gave a low faithfulness score
+  2. Read the answer and the retrieved context yourself
+  3. Do YOU agree the answer was unfaithful?
+  4. If RAGAS is wrong 3+ times out of 5, don't trust it blindly
+
+TASKS:
+  1. Find 5 questions with lowest faithfulness scores
+  2. For each: read the answer + context manually
+  3. Record your judgment vs RAGAS judgment
+  4. Calculate agreement rate
+
+WRITE IN NOTES.MD:
+  "LLM judge spot-check (5 questions):"
+  "  Q1: RAGAS=X, My judgment=Y, Agreement: yes/no"
+  "  Q2: ..."
+  "  Agreement rate: X/5"
+  "Conclusion: [trust RAGAS / use with caution / don't use]"
+
+COMMIT: git add notes.md && git commit -m "week5 d5: llm judge spot-checked"
+
+----------------------------------------------------------------
+DAY 6: PROFILE — TIME PER STAGE
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Profile each stage of your pipeline to find bottlenecks.
+  You can't optimize what you haven't measured.
+
+  STAGES TO PROFILE:
+  1. Embed query (MiniLM)
+  2. FAISS search
+  3. BM25 search
+  4. RRF merge
+  5. Reranker (if kept)
+  6. LLM call
+
+CODE:
+  # day6_profile.py
+  import time
+  from sentence_transformers import SentenceTransformer
+  import faiss, numpy as np, json
+  from rank_bm25 import BM25Okapi
+
+  model = SentenceTransformer("all-MiniLM-L6-v2")
+  index = faiss.read_index("phase4/results/faiss.index")
+  with open("phase4/results/chunks_metadata.json") as f:
+      chunks = json.load(f)
+  tokenized = [c["text"].lower().split() for c in chunks]
+  bm25 = BM25Okapi(tokenized)
+
+  query = "How do I set up a webhook in n8n?"
+  N = 10  # run N times for stable average
+
+  stages = {}
+
+  # Stage 1: Embed
+  times = []
+  for _ in range(N):
+      start = time.time()
+      vec = model.encode([query]).astype("float32")
+      faiss.normalize_L2(vec)
+      times.append(time.time() - start)
+  stages["embed_query"] = sum(times) / N * 1000
+
+  # Stage 2: FAISS search
+  times = []
+  for _ in range(N):
+      start = time.time()
+      index.search(vec, 20)
+      times.append(time.time() - start)
+  stages["faiss_search"] = sum(times) / N * 1000
+
+  # Stage 3: BM25 search
+  times = []
+  for _ in range(N):
+      start = time.time()
+      bm25.get_scores(query.lower().split())
+      times.append(time.time() - start)
+  stages["bm25_search"] = sum(times) / N * 1000
+
+  for stage, ms in stages.items():
+      print(f"{stage:20s}: {ms:.1f}ms")
+
+WRITE IN NOTES.MD:
+  "Pipeline profile:"
+  "  embed_query:  Xms"
+  "  faiss_search: Xms"
+  "  bm25_search:  Xms"
+  "  rrf_merge:    Xms"
+  "  reranker:     Xms (if kept)"
+  "  llm_call:     Xms"
+  "Bottleneck: [which stage is slowest?]"
+
+COMMIT: git add . && git commit -m "week5 d6: pipeline profiled"
+
+----------------------------------------------------------------
+DAY 7: FINAL RETRIEVER CONFIG + EVAL REPORT
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+TASKS:
+  1. Write your final retriever configuration in notes.md
+  2. Run run_eval.py one final time
+  3. Write the eval report
+
+FINAL RETRIEVER CONFIG (fill in your choices):
+  Embedding model:  all-MiniLM-L6-v2
+  Chunk size:       ____ chars
+  Chunk overlap:    ____ chars
+  Retrieval:        [dense-only / hybrid RRF]
+  Reranker:         [yes: cross-encoder / no]
+  Top-K to LLM:     ____
+  Similarity threshold: ____
+
+WEEK 5 DELIVERABLE CHECKLIST:
+  [ ] Reranker tested, kept or dropped based on eval data
+  [ ] RAGAS run on 10+ questions
+  [ ] LLM judge spot-checked manually
+  [ ] Pipeline profiled (time per stage)
+  [ ] Final retriever config documented
+  [ ] Eval report written in notes.md
+
+FINAL EVAL REPORT:
+  Baseline (Week 3):
+    Hit@3: ____% | Hit@5: ____% | Answer: ____% | Refusal: ____%
+  Final (Week 5):
+    Hit@3: ____% | Hit@5: ____% | Answer: ____% | Refusal: ____%
+  RAGAS:
+    Faithfulness: ____ | Answer relevancy: ____
+  Total Phase 4 cost: $____
+
+================================================================
+NEXT: week6_buffer_hardening.txt
+================================================================

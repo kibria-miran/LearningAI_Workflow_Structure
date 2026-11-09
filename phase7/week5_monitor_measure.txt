@@ -1,0 +1,21 @@
+================================================================
+PHASE 7 - WEEK 5: MONITOR + MEASURE
+Estimated time : 1 hr/day
+Estimated cost : API usage only
+================================================================
+
+GOAL: Prove it is worth running, with numbers.
+
+TRACK WEEKLY (one small table in notes.md):
+  tasks handled | accuracy (accepted without edit) | approval rate
+  | cost per task | total API + VPS cost | hours saved
+
+ROI = (hours saved x hourly cost) - (monthly API + VPS cost)
+  Be honest: count review time as time spent, not saved.
+
+EVERY WEEK: read the worst 10 traces, fix the top cause, add the
+case to the test set, re-run eval.
+
+EXIT WHEN:
+  [ ] 2 weekly rows recorded   [ ] ROI number written down
+================================================================

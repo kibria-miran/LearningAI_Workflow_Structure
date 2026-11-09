@@ -1,0 +1,181 @@
+================================================================
+PHASE 4 - WEEK 0 GATE
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 days
+Estimated cost : $0.00 (no API calls this week)
+================================================================
+
+GOAL: Confirm Phase 3 is complete and your environment is ready
+      for RAG work before writing a single line of Phase 4 code.
+
+----------------------------------------------------------------
+CHECKPOINT 1: Phase 3 Exit Checklist Passed
+----------------------------------------------------------------
+
+VERIFY ALL OF THESE ARE TRUE:
+
+  [ ] tracker.py wraps every API call, logs to results/usage.jsonl
+  [ ] Budget cap is inline in tracked_call (not in comments)
+  [ ] run_tests.py runs 10+ assertions in one command, exits 0
+  [ ] extractor.py returns validated Pydantic JSON with retry
+  [ ] assistant.py has 3 tools, loop cap, safe_execute, approval gate
+  [ ] Every call logged: timestamp, model, tokens, cost, latency
+
+IF ANY BOX IS UNCHECKED:
+  -> Go back to Phase 3 and finish it before continuing.
+  -> Phase 4 builds directly on tracker.py and extractor.py.
+     Skipping Phase 3 means rewriting those tools here.
+
+----------------------------------------------------------------
+CHECKPOINT 2: Understand What RAG Is
+----------------------------------------------------------------
+
+CONCEPT:
+  RAG = Retrieval-Augmented Generation.
+
+  The problem it solves: LLMs have a knowledge cutoff and no
+  access to YOUR private documents. If you ask "What is our
+  refund policy?", the model doesn't know — it's not in its
+  training data.
+
+  RAG fixes this by:
+  1. Storing your documents as searchable chunks
+  2. When a question arrives, finding the most relevant chunks
+  3. Injecting those chunks into the prompt as context
+  4. The model answers using ONLY that context
+
+  Flow:
+    Question -> Embed question -> Search index -> Top-k chunks
+    -> Inject into prompt -> Model answers -> Cite sources
+
+ANALOGY:
+  Without RAG: asking a new employee a question about company
+  policy. They guess based on general knowledge.
+
+  With RAG: the employee has a searchable filing cabinet of
+  every company document. They look up the answer before replying.
+
+WHY THIS MATTERS:
+  RAG is the most commercially deployed LLM pattern today.
+  Every "chat with your documents" product uses it.
+  Knowing how to build it from scratch is a core skill.
+
+WRITE IN NOTES.MD:
+  "RAG in one sentence: [your own words]"
+  "The problem RAG solves: [your own words]"
+
+----------------------------------------------------------------
+CHECKPOINT 3: Install Phase 4 Dependencies
+----------------------------------------------------------------
+
+  pip install faiss-cpu sentence-transformers rank-bm25 pydantic requests
+
+  WHY EACH:
+  faiss-cpu          -> vector similarity search (local, no server needed)
+  sentence-transformers -> local embedding model (MiniLM, free, fast)
+  rank-bm25          -> keyword search (Week 4 hybrid retrieval)
+  pydantic           -> already installed; used for eval schemas
+  requests           -> already installed; used for API calls
+
+  VERIFY:
+    python3 -c "import faiss; import sentence_transformers; import rank_bm25; print('OK')"
+
+  IF faiss-cpu FAILS ON LINUX:
+    -> Try: pip install faiss-cpu --no-cache-dir
+    -> Or: pip install faiss-gpu (if you have CUDA)
+
+  IF sentence_transformers IS SLOW ON FIRST RUN:
+    -> It downloads the MiniLM model (~90MB) on first use.
+       This is normal. It caches locally after the first download.
+
+----------------------------------------------------------------
+CHECKPOINT 4: Prepare Your Corpus
+----------------------------------------------------------------
+
+CONCEPT:
+  Your corpus is the set of documents the RAG system will search.
+  For Phase 4, use YOUR real business documents.
+
+  Good corpus options:
+  - FAQs, policies, price lists (PDF, TXT, MD)
+  - Product documentation
+  - Support ticket history
+  - Internal wikis or SOPs
+
+  Minimum: 20 files or 50+ pages of text.
+  Maximum: no hard limit, but start small.
+
+  If you don't have real docs yet:
+  -> Use the PDFs from your agentic ai/ and n8n-workflows/ folders.
+  -> They're real documents with real content. Good enough to start.
+
+FOLDER STRUCTURE TO CREATE NOW:
+  phase4/
+  ├── data/           <- your raw documents go here
+  ├── src/retrieve/   <- retrieval logic
+  ├── tests/
+  ├── results/
+  ├── notes.md
+  └── .env            <- same key as Phase 3
+
+  mkdir -p phase4/{data,src/retrieve,tests,results}
+  touch phase4/notes.md
+
+COPY YOUR .ENV:
+  cp phase3/.env phase4/.env
+  cp phase3/.gitignore phase4/.gitignore
+
+WRITE IN NOTES.MD:
+  "Corpus: [list your document sources]"
+  "Total files: [count]"
+  "Estimated total pages: [rough count]"
+
+----------------------------------------------------------------
+CHECKPOINT 5: Understand Embeddings at a High Level
+----------------------------------------------------------------
+
+CONCEPT:
+  An embedding is a list of numbers (a vector) that represents
+  the meaning of a piece of text.
+
+  Similar meaning -> similar vectors -> close together in space.
+  Different meaning -> different vectors -> far apart.
+
+  Example:
+    "How do I return a product?" -> [0.12, -0.45, 0.88, ...]
+    "What is your refund policy?" -> [0.11, -0.43, 0.90, ...]
+    "What is the capital of France?" -> [-0.72, 0.31, -0.15, ...]
+
+  The first two are semantically similar -> their vectors are close.
+  The third is unrelated -> its vector is far from the others.
+
+  Cosine similarity measures how close two vectors are.
+  Score of 1.0 = identical meaning. Score of 0.0 = unrelated.
+
+ANALOGY:
+  Imagine a map where every sentence is a dot. Sentences with
+  similar meaning are placed near each other. RAG finds the dots
+  nearest to your question and retrieves those sentences.
+
+WRITE IN NOTES.MD:
+  "Embedding in one sentence: [your own words]"
+  "Cosine similarity: [your own words]"
+
+----------------------------------------------------------------
+WEEK 0 GATE — PASS CRITERIA
+----------------------------------------------------------------
+
+You pass when ALL of these are true:
+
+  1. Phase 3 exit checklist: every box checked
+  2. Dependencies installed: faiss, sentence-transformers, rank-bm25
+  3. Corpus identified: 20+ files in phase4/data/ (or a plan to get them)
+  4. notes.md has your RAG definition and embedding definition
+  5. .env copied from Phase 3
+
+Once all 5 are done -> move to Week 1 Day 1.
+
+================================================================
+NEXT: week1_embeddings_chunking.txt
+================================================================

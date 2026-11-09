@@ -1,0 +1,10 @@
+# Phase 6 - requirements.txt
+fastapi>=0.100.0
+uvicorn[standard]>=0.27.0
+deepseek>=0.3.0
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+faiss-cpu>=1.7.0
+rank-bm25>=1.0.4
+sentence-transformers>=2.2.0
+pyyaml>=6.0.1

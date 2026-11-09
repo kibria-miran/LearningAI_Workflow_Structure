@@ -1,0 +1,26 @@
+================================================================
+PHASE 6 - STAGE E: RUNBOOK (one page per system)
+================================================================
+
+Use ../phase7/runbook.md as the template. A runbook is good when
+someone else could deploy, roll back and debug using only that page.
+
+MUST ANSWER:
+  1. What does it do, and who uses it?
+  2. How do I deploy it? (exact commands)
+  3. How do I roll back? (keep the previous image tag; see runbook)
+  4. What do I check when it breaks? (health, logs, provider status, budget)
+  5. What does it cost per month? (API + VPS)
+  6. Who do I call?
+
+ROLLBACK TIP: tag every deploy (git tag v1.0.3), keep the previous
+  image, and rehearse the rollback once on a quiet day.
+
+PHASE 6 EXIT CHECKLIST
+  [ ] One app live on a VPS over HTTPS
+  [ ] Push to main deploys after tests pass
+  [ ] No secret in the repo or the image
+  [ ] Retries + fallback proven by killing the provider on purpose
+  [ ] Backup restore tested once
+  [ ] Runbook written
+================================================================

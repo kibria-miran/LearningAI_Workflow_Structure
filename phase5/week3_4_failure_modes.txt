@@ -1,0 +1,160 @@
+================================================================
+PHASE 5 - WEEK 3-4: FAILURE MODES (ONE GUARDRAIL EACH, IN CODE)
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1-2 hrs/day across 2 weeks
+Estimated cost : <$0.20 (most tests use a fake model, no API calls)
+================================================================
+
+GOAL: Make the 5 ways agents fail impossible or loud.
+      Each guardrail lives in code, and each has a test that
+      triggers it ON PURPOSE.
+
+DELIVERABLE: guardrails.py + tests/failure_cases.py, all passing.
+
+GATE: agent.py from Week 1-2 runs 5 real tasks.
+
+SETUP:
+  mkdir -p tests
+  touch guardrails.py tests/failure_cases.py
+
+WHY A FAKE MODEL FOR TESTS:
+  You cannot make a real model fail on demand. Write a tiny
+  fake_tracked_call that returns scripted responses (a repeated
+  tool call, a bad tool name...). Tests are then free, fast, and
+  deterministic. Refactor run_agent(task, max_steps, call=tracked_call)
+  so tests can pass call=fake.
+
+----------------------------------------------------------------
+GUARDRAIL 1: INFINITE LOOP
+----------------------------------------------------------------
+
+CONCEPT:
+  Model calls the same tool with the same args forever. A step cap
+  stops it eventually; a repeat detector stops it in 2 steps.
+
+CODE (guardrails.py):
+  import json
+  class LoopGuard:
+      def __init__(self, max_repeats=2):
+          self.seen, self.max = {}, max_repeats
+      def check(self, name, args_json):
+          key = (name, json.dumps(json.loads(args_json or "{}"), sort_keys=True))
+          self.seen[key] = self.seen.get(key, 0) + 1
+          if self.seen[key] > self.max:
+              raise RuntimeError(f"Repeated call: {name} {key[1]}")
+
+TEST: fake model returns calculator("1+1") every turn.
+  Expect RuntimeError on the 3rd identical call, NOT at max_steps.
+
+----------------------------------------------------------------
+GUARDRAIL 2: FAKE TOOL CALL
+----------------------------------------------------------------
+
+CONCEPT:
+  Model invents a tool name or passes wrong/missing args.
+  Validate BEFORE running anything.
+
+CODE:
+  def validate_call(name, args, tools):
+      spec = next((t["function"] for t in tools if t["function"]["name"] == name), None)
+      if spec is None:
+          return f"Unknown tool '{name}'. Valid: {[t['function']['name'] for t in tools]}"
+      props = spec["parameters"]["properties"]
+      for req in spec["parameters"]["required"]:
+          if req not in args:
+              return f"Missing argument '{req}'"
+      for k in args:
+          if k not in props:
+              return f"Unexpected argument '{k}'"
+      return None   # valid
+
+  Return the error string TO THE MODEL as the tool result so it
+  can self-correct. Count these: 3 invalid calls in a run -> fail.
+
+TEST: fake model calls "delete_everything". Expect error message
+  returned to model, no function executed.
+
+----------------------------------------------------------------
+GUARDRAIL 3: COST BLOWUP
+----------------------------------------------------------------
+
+CONCEPT:
+  tracker.py has a daily/monthly cap. An agent also needs a
+  PER-RUN cap so one bad run cannot eat the day's budget.
+
+CODE:
+  class RunBudget:
+      def __init__(self, max_usd=0.05, max_tokens=60000):
+          self.usd = self.tokens = 0; self.max_usd, self.max_tokens = max_usd, max_tokens
+      def add(self, res):
+          self.usd += res.get("cost", 0)
+          self.tokens += res.get("input_tokens", 0) + res.get("output_tokens", 0)
+          if self.usd > self.max_usd or self.tokens > self.max_tokens:
+              raise RuntimeError(f"Run budget exceeded: ${self.usd:.4f}, {self.tokens} tokens")
+
+TEST: fake model reports cost=0.03 per call, cap 0.05. Expect stop on call 2.
+
+----------------------------------------------------------------
+GUARDRAIL 4: SILENT ERROR ("did it really do it?")
+----------------------------------------------------------------
+
+CONCEPT:
+  Model says "Done, I saved the file" but never called save_file.
+  Rule in CODE: a task that requires an action cannot finish
+  until that tool was actually called and returned success.
+
+CODE:
+  def require_tools(required, called_ok):
+      missing = set(required) - set(called_ok)
+      if missing:
+          return f"You have not completed: {sorted(missing)}. Do it before finishing."
+
+  In the loop: track called_ok = {tool names whose result had no "error"}.
+  On finish_reason == "stop", run require_tools; if it returns text,
+  append it as a user message and continue (counts toward pushback limit).
+
+TEST: task "write summary to out.txt"; fake model answers "done"
+  without calling write_file. Expect nudge, then failure.
+
+----------------------------------------------------------------
+GUARDRAIL 5: BAD OUTPUT -> PUSHBACK (MAX 2) THEN FAIL LOUDLY
+----------------------------------------------------------------
+
+CONCEPT:
+  Check the final answer (non-empty, required fields, no "NOT_FOUND"
+  leaked as an answer). If bad: nudge up to 2 times, then return
+  success=False with the reason. Never return a bad answer as success.
+
+CODE:
+  def check_answer(text):
+      if not text or not text.strip(): return "Empty answer."
+      if "NOT_FOUND" in text: return "Answer is a raw refusal token; explain what is missing."
+      return None
+
+----------------------------------------------------------------
+WEEK 4: VERIFY AGAINST GROUND TRUTH
+----------------------------------------------------------------
+
+  The agent's summary is NOT evidence. After each real task, check
+  the actual state: the file exists and contains the text, the
+  calculator number equals your own computation, the notes file
+  got the line. Write ground_truth_check(task_id) functions.
+
+PREDICT BEFORE YOU RUN:
+  Which of the 5 guardrails will your Phase 4 search_docs tool
+  trigger most often in real use?
+
+VERIFY:
+  python tests/failure_cases.py   -> 5+ tests PASS, exit 0
+
+EXPLAIN IT BACK:
+  "Why does the repeat detector catch what the step cap misses?"
+
+COMMIT: git add . && git commit -m "week3-4: 5 guardrails + tests"
+
+EXIT WHEN:
+  [ ] 5 guardrails in guardrails.py, wired into run_agent
+  [ ] tests/failure_cases.py triggers each one on purpose
+  [ ] Ground-truth checks for your 5 real tasks
+================================================================

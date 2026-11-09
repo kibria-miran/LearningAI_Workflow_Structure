@@ -1,0 +1,76 @@
+================================================================
+PHASE 5 - WEEK 6: TRACING + AGENT EVALS
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : <$0.30 (15-20 task eval, run a few times)
+================================================================
+
+GOAL: See exactly what every run did, replay failures, and score
+      the agent on real end state.
+
+DELIVERABLE: run_agent_eval.py + view_trace.py
+
+----------------------------------------------------------------
+DAY 1-2: JSONL TRACE
+----------------------------------------------------------------
+
+CONCEPT:
+  One line per event, one file per run: traces/RUN_ID.jsonl.
+  Without a trace, "the agent did something weird" is unfixable.
+
+CODE:
+  import json, time, uuid
+  class Trace:
+      def __init__(self):
+          self.run_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+          self.f = open(f"traces/{self.run_id}.jsonl", "a", encoding="utf-8")
+      def log(self, kind, **data):
+          self.f.write(json.dumps({"t": time.time(), "kind": kind, **data}, default=str) + "\n")
+          self.f.flush()
+
+  Events: model_call (messages count, tokens, cost, latency),
+  tool_call (name, args), tool_result (result[:500], error?),
+  guardrail (which one fired), final (success, answer, total cost).
+
+----------------------------------------------------------------
+DAY 3: REPLAY
+----------------------------------------------------------------
+
+  view_trace.py RUN_ID prints a readable timeline.
+  Replay = feed the recorded tool results back instead of calling
+  tools, so you can debug a failed run without side effects.
+
+----------------------------------------------------------------
+DAY 4-6: AGENT EVAL SET
+----------------------------------------------------------------
+
+  evals/tasks.yaml, 15-20 tasks:
+    - id: t01
+      task: "Total cost of 3 blue hoodies and 2 red mugs"
+      check: {type: contains, value: "161.97"}
+    - id: t02
+      task: "Save a note that the refund window is 30 days"
+      check: {type: file_contains, path: workspace/agent_notes.txt, value: "30 days"}
+
+  Check END STATE (files, numbers), never the agent's own claim.
+  Include 3 tasks that should FAIL SAFELY (missing data -> says so).
+
+  Record provider errors (timeouts, 5xx) as "error", NOT as "fail",
+  so quality scores are not polluted.
+
+PREDICT BEFORE YOU RUN:
+  Which task will cost the most? Check traces after.
+
+VERIFY:
+  python run_agent_eval.py -> pass / fail / error counts + total cost
+
+EXPLAIN IT BACK:
+  "Why record provider errors separately from quality failures?"
+
+COMMIT: git add . && git commit -m "week6: traces + agent eval"
+
+EXIT WHEN:
+  [ ] Every run writes traces/*.jsonl
+  [ ] 15+ tasks scored on end state, baseline recorded
+================================================================

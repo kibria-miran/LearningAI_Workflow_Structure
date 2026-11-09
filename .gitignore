@@ -1,0 +1,30 @@
+# Secrets (never commit)
+deekseek api key.txt
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Local data / artifacts
+results/*.index
+results/*.npy
+*.sqlite3
+*.db
+*.log
+chroma*/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,8 @@
+**/.env
+**/venv
+**/__pycache__
+**/*.pyc
+**/.git
+phase5
+phase7
+**/results/usage.jsonl

@@ -1,0 +1,38 @@
+================================================================
+PHASE 7 - WEEK 1: SCOPE (NO NEW LEARNING)
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : $0.00
+================================================================
+
+GOAL: One business task, one metric, one definition of done,
+      and 30+ real examples. No code this week.
+
+DELIVERABLE: CAPSTONE_SCOPE.md (fill the template in README.md)
+
+DAY 1  PICK ONE TASK
+  Options: support triage, doc Q&A, report generator,
+  order lookup + draft reply. Choose the one with the most
+  repetitive manual hours and data you already have.
+
+DAY 2  PROBLEM + COST
+  Write: the problem in 3 sentences; current manual hours/week;
+  hourly cost; who does it today.
+
+DAY 3  SUCCESS METRIC + DONE
+  Metric must be measurable: "correct triage on >= 90% of the test
+  set" or "draft accepted without edits >= 70%". Done = metric met
+  for 2 weeks in real use, cost per task under your cap.
+
+DAY 4  DATA, TOOLS, RISKS
+  List data sources, tools needed, and every risky action that needs
+  human approval (send, refund, delete, write to DB).
+
+DAY 5-6  TEST SET
+  Collect 30+ REAL examples (anonymise personal data). Include easy,
+  hard, ambiguous, and 5+ "should refuse / escalate" cases.
+  Write the expected result for each.
+
+EXIT WHEN:
+  [ ] Scope page written   [ ] 30+ examples with expected results
+  [ ] Metric and done definition written down
+================================================================

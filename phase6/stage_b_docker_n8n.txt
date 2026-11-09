@@ -1,0 +1,66 @@
+================================================================
+PHASE 6 - STAGE B: DOCKER + n8n (do during Phase 4)
+Estimated time : 4-6 hrs total
+Estimated cost : <$0.10
+================================================================
+
+GOAL: Your RAG app runs in a container next to n8n, with one command.
+
+----------------------------------------------------------------
+CHECKPOINT 1: DOCKER VOCABULARY
+----------------------------------------------------------------
+  image     = frozen recipe + files (like a zip of a ready machine)
+  container = a running instance of an image
+  volume    = storage that survives container deletion
+  port      = "-p 8000:8000" maps host port -> container port
+  Rule: anything that must survive a rebuild (index, logs, n8n data)
+  lives in a volume; secrets are passed at RUN time, never baked in.
+
+INSTALL (Ubuntu): follow docs.docker.com "Install Docker Engine",
+  then:  sudo usermod -aG docker $USER   (log out and back in)
+  Verify: docker run --rm hello-world
+
+----------------------------------------------------------------
+CHECKPOINT 2: RUN THE PROVIDED STACK
+----------------------------------------------------------------
+  Layout required (build context is the parent folder):
+     ~/ai-roadmap/phase3/  phase4/  phase6/
+  cd phase6
+  cp .env.example .env      # fill DEEPSEEK_API_KEY and APP_API_KEY
+  docker compose up -d --build
+  docker compose logs -f rag-app      # first start downloads the embedding model
+
+  Test:
+    curl localhost:8000/health
+    curl -X POST localhost:8000/query -H "Content-Type: application/json" \
+      -H "X-API-Key: <your APP_API_KEY>" -d '{"question":"What is the refund policy?"}'
+
+IF IT FAILS:
+  -> "No module named tracker": phase3/tracker.py is missing from the context
+  -> health says degraded: index not built; check logs of start.sh
+  -> permission denied on volume: remove the volume, recreate
+       docker compose down -v && docker compose up -d --build
+
+----------------------------------------------------------------
+CHECKPOINT 3: n8n WORKFLOW 1 (webhook -> RAG -> reply)
+----------------------------------------------------------------
+  Open http://localhost:5678 (create the owner account on first visit).
+  Nodes: Webhook -> HTTP Request -> IF (refused?) -> Email / Google Sheet
+  HTTP Request: POST http://rag-app:8000/query  (service name, NOT localhost)
+    Header X-API-Key: your key (use an n8n credential, not typed inline)
+    Body JSON: {"question": "{{ $json.body.question }}"}
+  Add a manual approval step before anything is sent to a customer.
+
+----------------------------------------------------------------
+CHECKPOINT 4: n8n WORKFLOW 2 (schedule -> fetch -> summarise -> digest)
+----------------------------------------------------------------
+  Schedule Trigger (daily 08:00) -> fetch data (RSS/Sheet/API)
+  -> HTTP Request to an LLM or your app -> Email digest.
+
+EXPLAIN IT BACK: "Why does n8n call http://rag-app:8000 and not localhost?"
+
+COMMIT: git commit -m "stage B: docker compose + n8n"
+EXIT WHEN:
+  [ ] docker compose up works from scratch   [ ] data survives a restart
+  [ ] both n8n workflows run end to end
+================================================================

@@ -1,0 +1,10 @@
+openai>=1.40
+python-dotenv
+pydantic
+requests
+pyyaml
+numpy
+faiss-cpu
+sentence-transformers
+pypdf
+rank-bm25

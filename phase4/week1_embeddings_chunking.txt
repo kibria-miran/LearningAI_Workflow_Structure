@@ -1,0 +1,470 @@
+================================================================
+PHASE 4 - WEEK 1: EMBEDDINGS + CHUNKING
+Provider : DeepSeek (for LLM calls) + MiniLM (for embeddings)
+Model    : deepseek-chat / all-MiniLM-L6-v2
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.01 (embeddings are local/free this week)
+================================================================
+
+GOAL: Understand what an embedding is by computing one manually.
+      Load and clean your documents. Chunk them 3 different ways.
+      Embed all chunks and store in FAISS.
+
+DELIVERABLE: build_index.py — re-runnable, no duplicates.
+
+----------------------------------------------------------------
+DAY 1: WHAT AN EMBEDDING IS — COMPUTE COSINE SIMILARITY BY HAND
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  An embedding model takes text and returns a fixed-length list
+  of floats. The list encodes the meaning of the text.
+
+  Cosine similarity between two vectors A and B:
+    similarity = dot(A, B) / (|A| * |B|)
+  Range: -1 (opposite) to 1 (identical). In practice: 0 to 1.
+
+  You don't need to understand the math deeply. You need to
+  understand what the numbers mean: high score = similar meaning.
+
+CODE:
+  # day1_embeddings.py
+  from sentence_transformers import SentenceTransformer
+  import numpy as np
+
+  model = SentenceTransformer("all-MiniLM-L6-v2")
+
+  sentences = [
+      "How do I return a product?",
+      "What is your refund policy?",
+      "How do I track my order?",
+      "What is the capital of France?",
+      "Can I get my money back?",
+      "Where is my shipment?",
+      "Tell me about the Eiffel Tower.",
+      "I want to cancel my purchase.",
+      "How long does delivery take?",
+      "What payment methods do you accept?"
+  ]
+
+  embeddings = model.encode(sentences)
+  print(f"Embedding shape: {embeddings.shape}")  # (10, 384)
+
+  def cosine_similarity(a, b):
+      return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+  # Compare sentence 0 against all others
+  query = embeddings[0]
+  print(f"\nQuery: '{sentences[0]}'")
+  print("Similarities:")
+  for i, (sent, emb) in enumerate(zip(sentences, embeddings)):
+      score = cosine_similarity(query, emb)
+      print(f"  {score:.3f}  {sent}")
+
+PREDICT BEFORE YOU RUN:
+  Which sentences will score highest against "How do I return a product?"
+  Will "What is the capital of France?" score high or low?
+
+VERIFY:
+  "What is your refund policy?" and "Can I get my money back?"
+  should score highest (0.7+).
+  "What is the capital of France?" should score lowest (<0.3).
+
+IF ALL SCORES ARE NEAR 1.0:
+  -> You're comparing a vector to itself. Check your loop index.
+
+IF ALL SCORES ARE NEAR 0.0:
+  -> The model may not have downloaded correctly. Re-run once.
+
+WRITE IN NOTES.MD:
+  "Top 3 similar sentences to query 0: [paste results]"
+  "Lowest scoring sentence: [paste result]"
+
+COMMIT: git add . && git commit -m "week1 d1: embeddings + cosine similarity"
+
+----------------------------------------------------------------
+DAY 2: PICK YOUR CORPUS + PLAN
+Estimated: 60 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Your corpus is the knowledge base your RAG system will search.
+  The quality of your answers is limited by the quality of your docs.
+
+  GOOD CORPUS PROPERTIES:
+  - Covers the topics users will ask about
+  - Has clear, factual content (not vague marketing text)
+  - Mix of formats is fine: PDF, TXT, MD
+
+  BAD CORPUS PROPERTIES:
+  - Duplicate files (same content in multiple files)
+  - Scanned PDFs with no text layer (OCR needed, skip for now)
+  - Files with only images and no text
+
+TASKS:
+  1. Copy 20–50 documents into phase4/data/
+     (Use your agentic ai/ and n8n-workflows/ PDFs if needed)
+  2. List them in notes.md with a one-line description of each
+  3. Identify which files are most likely to be queried
+
+  ls phase4/data/ | wc -l   # count files
+
+WRITE IN NOTES.MD:
+  "Corpus plan:"
+  "- [filename]: [what it contains]"
+  "- ..."
+  "Total files: X"
+  "Expected question types: [list 5 questions users might ask]"
+
+COMMIT: git add phase4/data/ phase4/notes.md && git commit -m "week1 d2: corpus selected"
+
+----------------------------------------------------------------
+DAY 3: LOAD + CLEAN DOCS — KEEP SOURCE/PAGE METADATA
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  Before chunking, you need to load each document into memory
+  as plain text. Keep track of WHERE each piece of text came from
+  (filename + page number). This is your metadata.
+
+  WHY METADATA MATTERS:
+  When the model answers a question, it must cite sources.
+  Without metadata, you can't say "this answer came from page 3
+  of refund_policy.pdf". You just have floating text with no origin.
+
+  pip install pypdf
+
+CODE:
+  # day3_load_docs.py
+  import os
+  from pathlib import Path
+  from pypdf import PdfReader
+
+  DATA_DIR = "phase4/data"
+
+  def load_txt(path: str) -> list[dict]:
+      """Load a .txt or .md file. Returns list of {text, source, page}."""
+      with open(path, encoding="utf-8", errors="ignore") as f:
+          content = f.read().strip()
+      return [{"text": content, "source": Path(path).name, "page": 1}]
+
+  def load_pdf(path: str) -> list[dict]:
+      """Load a PDF. Returns one dict per page with metadata."""
+      reader = PdfReader(path)
+      pages = []
+      for i, page in enumerate(reader.pages):
+          text = page.extract_text() or ""
+          text = text.strip()
+          if len(text) > 50:  # skip near-empty pages
+              pages.append({"text": text, "source": Path(path).name, "page": i + 1})
+      return pages
+
+  def load_all_docs(data_dir: str) -> list[dict]:
+      """Load all supported files from data_dir."""
+      docs = []
+      for fname in os.listdir(data_dir):
+          fpath = os.path.join(data_dir, fname)
+          if fname.endswith(".pdf"):
+              docs.extend(load_pdf(fpath))
+          elif fname.endswith((".txt", ".md")):
+              docs.extend(load_txt(fpath))
+      print(f"Loaded {len(docs)} pages from {data_dir}")
+      return docs
+
+  if __name__ == "__main__":
+      docs = load_all_docs(DATA_DIR)
+      for doc in docs[:3]:
+          print(f"Source: {doc['source']} | Page: {doc['page']} | Chars: {len(doc['text'])}")
+          print(f"Preview: {doc['text'][:100]}\n")
+
+PREDICT BEFORE YOU RUN:
+  How many pages do you expect from your corpus?
+  Will any PDFs have empty pages?
+
+VERIFY:
+  Each doc dict has text, source, page.
+  No empty text fields (the len > 50 filter handles this).
+
+IF A PDF RETURNS EMPTY TEXT:
+  -> It may be a scanned image PDF. Skip it for now.
+  -> Add it to a "skipped_files" list in notes.md.
+
+COMMIT: git add . && git commit -m "week1 d3: doc loader with metadata"
+
+----------------------------------------------------------------
+DAY 4: CHUNKING — FIXED SIZE VS PARAGRAPH, 3 SIZES
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  A "chunk" is a piece of text small enough to fit in a prompt
+  alongside other chunks, but large enough to contain a complete
+  thought.
+
+  WHY CHUNK SIZE MATTERS:
+  Too small (100 tokens): chunks lack context. "The price is $50"
+    — $50 for what? The surrounding context is missing.
+  Too large (2000 tokens): you can only fit 1–2 chunks in the
+    prompt. You miss relevant content from other parts of the doc.
+  Sweet spot: 400–800 tokens with 10–20% overlap.
+
+  OVERLAP: The last N tokens of chunk 1 are repeated at the start
+  of chunk 2. This prevents answers from being split across chunks.
+
+  ANALOGY: Cutting a book into index cards. Too small = one word
+  per card, useless. Too large = one chapter per card, can't fit
+  enough cards in front of you. Overlap = each card repeats the
+  last sentence of the previous card so you don't lose context.
+
+CODE:
+  # day4_chunking.py
+  import re
+
+  def chunk_fixed(text: str, size: int = 800, overlap: int = 100) -> list[str]:
+      """Split text into fixed-size chunks with overlap (by characters)."""
+      chunks = []
+      start = 0
+      while start < len(text):
+          end = start + size
+          chunks.append(text[start:end])
+          start += size - overlap
+      return chunks
+
+  def chunk_paragraph(text: str, max_size: int = 800) -> list[str]:
+      """Split on double newlines (paragraphs). Merge short ones."""
+      paragraphs = [p.strip() for p in re.split(r'\n\n+', text) if p.strip()]
+      chunks = []
+      current = ""
+      for para in paragraphs:
+          if len(current) + len(para) < max_size:
+              current += ("\n\n" if current else "") + para
+          else:
+              if current:
+                  chunks.append(current)
+              current = para
+      if current:
+          chunks.append(current)
+      return chunks
+
+  # Test with a sample document
+  sample_text = open("phase4/data/" + os.listdir("phase4/data")[0]).read()[:3000]
+
+  for size in [400, 800, 1200]:
+      chunks = chunk_fixed(sample_text, size=size)
+      print(f"Fixed size={size}: {len(chunks)} chunks, avg {sum(len(c) for c in chunks)//len(chunks)} chars")
+
+  para_chunks = chunk_paragraph(sample_text)
+  print(f"Paragraph: {len(para_chunks)} chunks, avg {sum(len(c) for c in para_chunks)//len(para_chunks)} chars")
+
+PREDICT BEFORE YOU RUN:
+  Which chunking method will produce more chunks?
+  Which will produce more coherent chunks?
+
+VERIFY:
+  Fixed size produces predictable chunk counts.
+  Paragraph chunking produces variable sizes but cleaner boundaries.
+
+WRITE IN NOTES.MD:
+  "Chunking experiment results:"
+  "Fixed 400: X chunks | Fixed 800: X chunks | Fixed 1200: X chunks"
+  "Paragraph: X chunks"
+  "My initial choice: [size + method] because [reason]"
+
+COMMIT: git add . && git commit -m "week1 d4: chunking strategies compared"
+
+----------------------------------------------------------------
+DAY 5: EMBED ALL CHUNKS + LOG COST
+Estimated: 90 min | Cost: $0.00 (local model)
+----------------------------------------------------------------
+
+CONCEPT:
+  Now you embed every chunk in your corpus. This is the most
+  compute-intensive step. With a local model (MiniLM), it's free
+  but takes a few minutes for large corpora.
+
+  Each chunk becomes a vector. You store both the vector and the
+  original text + metadata together.
+
+CODE:
+  # day5_embed.py
+  from sentence_transformers import SentenceTransformer
+  import numpy as np
+  import time
+
+  model = SentenceTransformer("all-MiniLM-L6-v2")
+
+  # Load docs (reuse day3 loader)
+  from day3_load_docs import load_all_docs
+  from day4_chunking import chunk_fixed
+
+  docs = load_all_docs("phase4/data")
+
+  # Build chunks with metadata
+  all_chunks = []
+  for doc in docs:
+      chunks = chunk_fixed(doc["text"], size=800, overlap=100)
+      for i, chunk in enumerate(chunks):
+          all_chunks.append({
+              "text": chunk,
+              "source": doc["source"],
+              "page": doc["page"],
+              "chunk_id": f"{doc['source']}_p{doc['page']}_c{i}"
+          })
+
+  print(f"Total chunks: {len(all_chunks)}")
+
+  # Embed all chunks
+  start = time.time()
+  texts = [c["text"] for c in all_chunks]
+  embeddings = model.encode(texts, batch_size=32, show_progress_bar=True)
+  elapsed = time.time() - start
+
+  print(f"Embedded {len(embeddings)} chunks in {elapsed:.1f}s")
+  print(f"Embedding shape: {embeddings.shape}")
+  print(f"Cost: $0.00 (local model)")
+
+  # Save embeddings + metadata
+  np.save("phase4/results/embeddings.npy", embeddings)
+  import json
+  with open("phase4/results/chunks_metadata.json", "w") as f:
+      json.dump(all_chunks, f, indent=2)
+
+  print("Saved to phase4/results/")
+
+PREDICT BEFORE YOU RUN:
+  How long will embedding take for your corpus?
+  What shape will the embeddings array be? (hint: N x 384)
+
+VERIFY:
+  embeddings.npy saved. chunks_metadata.json saved.
+  Shape is (total_chunks, 384).
+
+IF EMBEDDING IS VERY SLOW:
+  -> Reduce batch_size to 8
+  -> Or use a smaller corpus for now (10 files)
+
+WRITE IN NOTES.MD:
+  "Total chunks: X | Embedding time: Xs | Shape: (X, 384)"
+
+COMMIT: git add . && git commit -m "week1 d5: all chunks embedded, saved to disk"
+
+----------------------------------------------------------------
+DAY 6: STORE IN FAISS — SAVE/LOAD INDEX FROM DISK
+Estimated: 90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  FAISS (Facebook AI Similarity Search) is a library for fast
+  vector similarity search. You give it a query vector and it
+  returns the K most similar vectors from your index.
+
+  Without FAISS: comparing a query to 10,000 chunks means 10,000
+  cosine similarity calculations. Slow.
+  With FAISS: uses optimized indexing to find top-K in milliseconds.
+
+  ANALOGY: FAISS is like a library's card catalog. Instead of
+  reading every book to find relevant ones, you search the catalog
+  and go directly to the right shelf.
+
+CODE:
+  # day6_faiss_index.py
+  import faiss
+  import numpy as np
+  import json
+
+  # Load saved embeddings
+  embeddings = np.load("phase4/results/embeddings.npy").astype("float32")
+  with open("phase4/results/chunks_metadata.json") as f:
+      chunks = json.load(f)
+
+  # Build FAISS index
+  dim = embeddings.shape[1]  # 384 for MiniLM
+  index = faiss.IndexFlatIP(dim)  # Inner Product = cosine similarity (on normalized vectors)
+
+  # Normalize vectors for cosine similarity
+  faiss.normalize_L2(embeddings)
+  index.add(embeddings)
+
+  print(f"Index built: {index.ntotal} vectors, dim={dim}")
+
+  # Save index to disk
+  faiss.write_index(index, "phase4/results/faiss.index")
+  print("Index saved to phase4/results/faiss.index")
+
+  # Test: load and search
+  loaded_index = faiss.read_index("phase4/results/faiss.index")
+
+  from sentence_transformers import SentenceTransformer
+  model = SentenceTransformer("all-MiniLM-L6-v2")
+
+  query = "How do I return a product?"
+  query_vec = model.encode([query]).astype("float32")
+  faiss.normalize_L2(query_vec)
+
+  scores, indices = loaded_index.search(query_vec, k=5)
+
+  print(f"\nTop 5 results for: '{query}'")
+  for score, idx in zip(scores[0], indices[0]):
+      chunk = chunks[idx]
+      print(f"  Score: {score:.3f} | Source: {chunk['source']} p{chunk['page']}")
+      print(f"  Preview: {chunk['text'][:100]}\n")
+
+PREDICT BEFORE YOU RUN:
+  Which documents will appear in the top 5 results?
+  Will the scores be above 0.5?
+
+VERIFY:
+  faiss.index file created. Search returns 5 results with scores.
+  Results are from relevant documents (not random files).
+
+IF ALL SCORES ARE NEAR 0.0:
+  -> Vectors may not be normalized. Check faiss.normalize_L2 is called.
+
+IF INDEX SEARCH RETURNS -1 INDICES:
+  -> Index is empty. Check index.add() was called before saving.
+
+COMMIT: git add . && git commit -m "week1 d6: faiss index built, saved, loaded, searched"
+
+----------------------------------------------------------------
+DAY 7: REVIEW + BUILD build_index.py DELIVERABLE
+Estimated: 60–90 min | Cost: $0.00
+----------------------------------------------------------------
+
+CONCEPT:
+  build_index.py is your Week 1 deliverable. It combines Days 3–6
+  into one re-runnable script. Running it twice should produce
+  the same index (no duplicates).
+
+  NO DUPLICATES STRATEGY:
+  Hash each chunk's text. Before adding to the index, check if
+  that hash already exists. Skip duplicates.
+
+build_index.py REQUIREMENTS:
+  [ ] Loads all docs from phase4/data/ (PDF, TXT, MD)
+  [ ] Chunks with your chosen size + overlap
+  [ ] Deduplicates chunks by text hash
+  [ ] Embeds all unique chunks with MiniLM
+  [ ] Builds and saves FAISS index to phase4/results/faiss.index
+  [ ] Saves chunk metadata to phase4/results/chunks_metadata.json
+  [ ] Prints: total files, total chunks, duplicates skipped, time taken
+  [ ] Running it twice produces the same output (idempotent)
+
+VERIFY IDEMPOTENCY:
+  python build_index.py  # first run
+  python build_index.py  # second run
+  -> Both runs should report the same chunk count.
+  -> "Duplicates skipped: X" should be > 0 on the second run
+     if you implement hash-based dedup.
+
+WEEK 1 DELIVERABLE CHECKLIST:
+  [ ] build_index.py runs end-to-end without errors
+  [ ] FAISS index saved to disk and loadable
+  [ ] Chunk metadata includes source filename and page number
+  [ ] Running twice produces no duplicates
+  [ ] notes.md updated with chunking experiment results
+
+================================================================
+NEXT: week2_retrieval_first_rag.txt
+================================================================

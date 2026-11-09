@@ -1,0 +1,300 @@
+# Phase 4 - Eval set (Week 3). Every expected_source is a REAL file in data/.
+# key_facts: lowercase substrings that MUST appear in a correct answer.
+# refusal: must refuse (guardrail or NOT_FOUND) AND not contain forbidden_terms.
+# When you add your own business docs, add questions here. Target 30+, 5+ refusals.
+
+- id: q001
+  question: What is your refund policy?
+  expected_source: refund_policy.txt
+  key_facts:
+  - '30'
+  forbidden_terms: []
+  question_type: factual
+
+- id: q002
+  question: How long does a refund take to process?
+  expected_source: refund_policy.txt
+  key_facts:
+  - 5-7 business days
+  forbidden_terms: []
+  question_type: factual
+
+- id: q003
+  question: What do I need to return an item?
+  expected_source: refund_policy.txt
+  key_facts:
+  - proof of purchase
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q004
+  question: Can I return a damaged item, and for how long?
+  expected_source: refund_policy.txt
+  key_facts:
+  - 90 days
+  forbidden_terms: []
+  question_type: factual
+
+- id: q005
+  question: Are shipping costs refundable on returns?
+  expected_source: refund_policy.txt
+  key_facts:
+  - our error
+  forbidden_terms: []
+  question_type: factual
+
+- id: q006
+  question: Where does my refund get sent?
+  expected_source: refund_policy.txt
+  key_facts:
+  - original payment method
+  forbidden_terms: []
+  question_type: factual
+
+- id: q007
+  question: What condition must returned items be in?
+  expected_source: refund_policy.txt
+  key_facts:
+  - original
+  forbidden_terms: []
+  question_type: factual
+
+- id: q008
+  question: How long does standard shipping take?
+  expected_source: shipping_policy.txt
+  key_facts:
+  - 2-5
+  forbidden_terms: []
+  question_type: factual
+
+- id: q009
+  question: How much does express shipping cost?
+  expected_source: shipping_policy.txt
+  key_facts:
+  - '14.99'
+  forbidden_terms: []
+  question_type: factual
+
+- id: q010
+  question: What order value qualifies for free shipping?
+  expected_source: shipping_policy.txt
+  key_facts:
+  - '99'
+  forbidden_terms: []
+  question_type: factual
+
+- id: q011
+  question: How long does international delivery take?
+  expected_source: shipping_policy.txt
+  key_facts:
+  - 7-21
+  forbidden_terms: []
+  question_type: factual
+
+- id: q012
+  question: Who pays customs duties on international orders?
+  expected_source: shipping_policy.txt
+  key_facts:
+  - customer
+  forbidden_terms: []
+  question_type: factual
+
+- id: q013
+  question: How soon do orders leave the warehouse?
+  expected_source: shipping_policy.txt
+  key_facts:
+  - 1-2
+  forbidden_terms: []
+  question_type: factual
+
+- id: q014
+  question: Which is cheaper, standard or express shipping?
+  expected_source: shipping_policy.txt
+  key_facts:
+  - '5.99'
+  - '14.99'
+  forbidden_terms: []
+  question_type: comparison
+
+- id: q015
+  question: What payment methods do you accept?
+  expected_source: payment_policy.txt
+  key_facts:
+  - paypal
+  - visa
+  forbidden_terms: []
+  question_type: factual
+
+- id: q016
+  question: When can I pay by bank transfer?
+  expected_source: payment_policy.txt
+  key_facts:
+  - '500'
+  forbidden_terms: []
+  question_type: factual
+
+- id: q017
+  question: Do you offer installment payments?
+  expected_source: payment_policy.txt
+  key_facts:
+  - klarna
+  forbidden_terms: []
+  question_type: factual
+
+- id: q018
+  question: What should I do if my card is declined?
+  expected_source: payment_policy.txt
+  key_facts:
+  - bank
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q019
+  question: Is your payment processing PCI compliant?
+  expected_source: payment_policy.txt
+  key_facts:
+  - pci-dss
+  forbidden_terms: []
+  question_type: factual
+
+- id: q020
+  question: What are the customer support hours?
+  expected_source: contact_info.txt
+  key_facts:
+  - 9 am
+  - 5 pm
+  forbidden_terms: []
+  question_type: factual
+
+- id: q021
+  question: What is the support email address?
+  expected_source: contact_info.txt
+  key_facts:
+  - support@company.com
+  forbidden_terms: []
+  question_type: factual
+
+- id: q022
+  question: What is the support phone number?
+  expected_source: contact_info.txt
+  key_facts:
+  - '555'
+  forbidden_terms: []
+  question_type: factual
+
+- id: q023
+  question: Which email handles billing questions?
+  expected_source: contact_info.txt
+  key_facts:
+  - billing@company.com
+  forbidden_terms: []
+  question_type: factual
+
+- id: q024
+  question: What is an n8n workflow?
+  expected_source: n8n_workflow_documentation.txt
+  key_facts:
+  - nodes
+  forbidden_terms: []
+  question_type: factual
+
+- id: q025
+  question: What can start an n8n workflow?
+  expected_source: n8n_workflow_documentation.txt
+  key_facts:
+  - webhook
+  - schedule
+  forbidden_terms: []
+  question_type: factual
+
+- id: q026
+  question: How do I run an n8n workflow on a schedule?
+  expected_source: n8n_workflow_documentation.txt
+  key_facts:
+  - cron
+  forbidden_terms: []
+  question_type: procedural
+
+- id: q027
+  question: What are best practices for n8n workflows?
+  expected_source: n8n_workflow_documentation.txt
+  key_facts:
+  - modular
+  forbidden_terms: []
+  question_type: factual
+
+- id: q028
+  question: How does n8n handle workflow failures?
+  expected_source: n8n_workflow_documentation.txt
+  key_facts:
+  - retry
+  forbidden_terms: []
+  question_type: factual
+
+- id: q029
+  question: Tell me about the Eiffel Tower.
+  expected_source: null
+  key_facts: []
+  forbidden_terms:
+  - eiffel
+  - paris
+  question_type: refusal
+
+- id: q030
+  question: What is the GDP of Germany in 2024?
+  expected_source: null
+  key_facts: []
+  forbidden_terms:
+  - gdp
+  - trillion
+  question_type: refusal
+
+- id: q031
+  question: Who won the 2025 World Cup?
+  expected_source: null
+  key_facts: []
+  forbidden_terms:
+  - world cup
+  - won
+  question_type: refusal
+
+- id: q032
+  question: What is our competitor's pricing?
+  expected_source: null
+  key_facts: []
+  forbidden_terms:
+  - competitor
+  question_type: refusal
+
+- id: q033
+  question: What is the current stock price of Apple?
+  expected_source: null
+  key_facts: []
+  forbidden_terms:
+  - aapl
+  - stock
+  question_type: refusal
+
+- id: q034
+  question: What is the capital of France?
+  expected_source: null
+  key_facts: []
+  forbidden_terms:
+  - paris
+  question_type: refusal
+
+- id: q035
+  question: What is the warranty period for laptops?
+  expected_source: null
+  key_facts: []
+  forbidden_terms:
+  - warranty period
+  - laptop
+  question_type: refusal
+
+- id: q036
+  question: Who is the CEO of the company?
+  expected_source: null
+  key_facts: []
+  forbidden_terms: []
+  question_type: refusal

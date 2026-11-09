@@ -1,0 +1,20 @@
+Customer Contact Information
+
+Support Hours:
+- Monday-Friday: 9 AM - 5 PM EST
+- Saturday-Sunday: Closed
+
+Contact Methods:
+- Email: support@company.com - typically responds within 24 hours
+- Phone: 1-800-555-HELP (1-800-555-4357) - available during support hours
+- Contact Form: Available at company.com/contact - typically responds within 24 hours
+
+Frequently Asked Questions:
+- Check our FAQ page at company.com/faq for immediate answers
+- Live chat available during support hours on company.com
+- Community forum at community.company.com - peer-supported
+
+Billing Inquiries:
+- Billing department: billing@company.com
+- Invoice requests: Include order number in email
+- Subscription changes: Modify via account portal or contact support

@@ -1,0 +1,41 @@
+# Phase 6 - run from inside phase6/:  docker compose up -d --build
+services:
+  rag-app:
+    build:
+      context: ..                       # parent folder: phase3/ phase4/ phase6/
+      dockerfile: phase6/Dockerfile
+    env_file: .env                      # secrets stay out of the image
+    ports:
+      - "127.0.0.1:8000:8000"           # localhost only; put Caddy/Nginx in front on a VPS
+    volumes:
+      - ../phase4/data:/app/phase4/data:ro
+      - rag_results:/app/phase4/results
+      - tracker_logs:/app/phase3/results
+      - hf_cache:/hf-cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest             # pin a version tag before production
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=Asia/Karachi
+      - N8N_SECURE_COOKIE=false         # local http only; remove behind HTTPS
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      rag-app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  rag_results:
+  tracker_logs:
+  hf_cache:
+  n8n_data:

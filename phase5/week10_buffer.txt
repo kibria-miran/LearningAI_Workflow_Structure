@@ -1,0 +1,20 @@
+================================================================
+PHASE 5 - WEEK 10: BUFFER
+================================================================
+
+Use this week for whatever the eval flagged. Priority order:
+
+  1. Failing eval tasks (read the traces first)
+  2. Provider errors: retry with back-off, fallback model
+  3. Cost review: sum traces by task, find the 3 most expensive
+  4. Tidy notes.md, run weekly_self_check.py, fix what breaks
+
+PHASE 5 EXIT CHECKLIST
+  [ ] Hand-built loop + LangGraph version, same eval results
+  [ ] 5 failure modes each have a guardrail AND a test
+  [ ] Risky tools need approval (injection test passes)
+  [ ] Every run traced to JSONL, replayable
+  [ ] 15+ task eval, scored on real end state
+  [ ] One MCP server built and used
+  [ ] A run cannot cost more than your per-run cap
+================================================================

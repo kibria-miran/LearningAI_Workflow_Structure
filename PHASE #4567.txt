@@ -1,0 +1,223 @@
+PHASE 4: RAG (5-6 wks, 1-2 hrs/day)
+
+GATE: Phase 3 exit checklist passed (tracker, tests, tool loop)
+
+WEEK 1  EMBEDDINGS + CHUNKING
+  D1  What an embedding is; embed 10 sentences, compute cosine similarity by hand
+  D2  Pick the corpus: YOUR business docs (FAQs, policies, price lists), 20-50 files
+  D3  Load + clean docs (PDF, MD, TXT), keep source/page metadata
+  D4  Chunking: fixed size vs paragraph-aware, overlap; try 3 sizes (400/800/1200)
+  D5  Embed all chunks (local model like MiniLM, or an API), log cost
+  D6  Store in FAISS or Chroma, save/load index from disk
+  D7  Review, notes.md
+  DELIVERABLE: build_index.py, re-runnable, no duplicates
+
+WEEK 2  RETRIEVAL + FIRST RAG
+  D1  Top-k similarity search, print chunks + scores
+  D2  Prompt: "answer only from context, say 'not found' otherwise"
+  D3  Citations: every answer lists source files
+  D4  Multi-turn: rewrite follow-up questions into standalone queries
+  D5  Streaming answers + usage logging (reuse Phase 3 tracker)
+  D6  Refusal guardrail: low similarity score -> decline, no LLM call
+  D7  Review
+  DELIVERABLE: ask.py (CLI Q&A with sources)
+
+WEEK 3  EVAL SET (before improving anything)
+  D1  Write 30+ real questions from your business, with expected source file + key facts
+  D2  Include 5 questions with NO answer in the docs (must refuse)
+  D3  run_eval.py: retrieval hit@k (right file in top-k?)
+  D4  Answer check: required keywords present, forbidden terms absent
+  D5  Save results per run, diff before/after
+  D6  Find the 5 worst failures, categorize: bad chunk / bad query / bad prompt
+  D7  Baseline score recorded
+  DELIVERABLE: tests/rag_eval.yaml + baseline numbers
+
+WEEK 4  HYBRID SEARCH + QUERY IMPROVEMENT
+  D1  BM25 (rank-bm25) over the SAME chunks as FAISS
+  D2  Reciprocal Rank Fusion to merge dense + BM25
+  D3  Re-run eval; keep only if score improves
+  D4  Query rewriting / synonym map for your business vocabulary
+  D5  Tune chunk size + overlap against eval
+  D6  Metadata filters (by doc type, date)
+  D7  Review
+  DELIVERABLE: hybrid retriever beating baseline
+
+WEEK 5  RERANKER + RAGAS
+  D1  Reranker concept: cross-encoder reorders top 20 -> top 4
+  D2  Try one (Cohere Rerank or small cross-encoder), measure latency
+  D3  Keep it ONLY if eval improves (they can hurt on exact identifiers)
+  D4  RAGAS: faithfulness + answer relevancy, compare to your manual scores
+  D5  LLM-as-judge for answers; spot-check the judge yourself
+  D6  Profile: time per stage (embed, search, rerank, LLM)
+  D7  Review
+  DELIVERABLE: final retriever config + eval report
+
+WEEK 6  BUFFER + HARDENING
+  Incremental re-index (hash files, only re-embed changed ones)
+  Retry/fallback on provider errors, expand eval toward 50 questions
+
+EXIT CHECKLIST
+  [ ] Index builds from your real docs, re-runnable
+  [ ] Answers cite sources, refuse when evidence is missing
+  [ ] 30+ question eval, retrieval and answer scored separately
+  [ ] Hybrid beats dense-only on your eval (with numbers)
+  [ ] Reranker tested, kept or dropped based on data
+  [ ] RAGAS run and compared with manual checks
+  [ ] You can explain chunking, embeddings, RRF simply
+
+FOLDER
+  phase4/ data/ build_index.py ask.py run_eval.py
+  src/retrieve/ tests/rag_eval.yaml results/ notes.md
+PHASE 5: AGENTS (8-10 wks, 1-2 hrs/day)
+
+GATE: Phase 3 tool loop works; Phase 4 RAG works
+
+WEEK 1-2  THE HAND-BUILT LOOP
+  W1  Think -> act -> observe loop from scratch, raw API, no framework
+      Tools: read_file, search_docs (your RAG), calculator
+      Step cap (max 8), plain final answer ends loop
+  W1  Scope tools to one folder; no shell access yet
+  W2  System prompt: role, rules, when to stop, "never invent data"
+  W2  Conversation memory: last N turns + summary of older ones
+  W2  Long-term notes: remember() tool writing to notes file
+  DELIVERABLE: agent.py running 5 real tasks end to end
+
+WEEK 3-4  FAILURE MODES (one guardrail each, in CODE)
+  Infinite loop      -> step cap + repeated-call detector
+  Fake tool call     -> validate name + args against schema
+  Cost blowup        -> per-run token + $ budget, hard stop
+  Silent error       -> "did it really do it?" flag
+                        (e.g. save_file must be called before 'done')
+  Bad output         -> pushback nudge (max 2) then fail loudly
+  W3  Build each guardrail, then write a test that triggers it on purpose
+  W4  Verify against ground truth: check files/DB, not the agent's summary
+  DELIVERABLE: tests/failure_cases.py, all guardrails proven
+
+WEEK 5  HUMAN IN THE LOOP + SAFETY
+  Risk tiers: read-only (auto), write (log), send/delete/pay (approve y/n)
+  Approval for emails, refunds, DB writes
+  Prompt injection: text from docs/web is DATA, never instructions
+  Sandboxed run_python (temp dir, timeout) or skip it entirely
+  DELIVERABLE: agent that cannot do anything risky unapproved
+
+WEEK 6  TRACING + EVALS
+  JSONL trace: every model call, tool call, args, result, cost, latency
+  Replay a failed run from the trace
+  Agent eval set: 15-20 tasks with pass/fail checks on end state
+  Record provider errors separately from quality failures
+  DELIVERABLE: run_agent_eval.py + trace viewer script
+
+WEEK 7  PATTERNS
+  Plan-and-execute (plan first, then run steps)
+  Reflection (agent critiques its draft once)
+  Router (cheap classify step -> pick tool/specialist)
+  Best-of-N (several drafts, judge picks)
+  Add a pattern ONLY if eval shows a gap
+  DELIVERABLE: one pattern added with before/after numbers
+
+WEEK 8  LANGGRAPH
+  Rebuild your hand-made agent in LangGraph
+  State, nodes, edges, conditional routing, checkpoints
+  Compare: what did the framework save, what did it hide?
+  Add human-approval interrupt using its built-in feature
+  Langfuse or LangSmith tracing on top of JSONL
+  DELIVERABLE: same agent in LangGraph, same eval score
+
+WEEK 9  MCP
+  What MCP is: tools exposed over a standard protocol
+  Use an existing MCP server (filesystem or a docs one) from a client
+  Build ONE small MCP server exposing your business tool (e.g. order lookup)
+  Treat MCP tool output as untrusted data
+  DELIVERABLE: your MCP server + agent calling it
+
+WEEK 10  BUFFER
+  Fix what the eval flagged, add retries/fallback provider, cost review
+
+EXIT CHECKLIST
+  [ ] Hand-built loop + LangGraph version, same results
+  [ ] 5 failure modes each have a guardrail AND a test
+  [ ] Risky tools need approval
+  [ ] Every run traced to JSONL, replayable
+  [ ] 15+ task eval, scored on real end state
+  [ ] One MCP server built and used
+  [ ] A run can't cost more than your budget cap
+
+FOLDER
+  phase5/ agent.py guardrails.py tools/ traces/
+  evals/ langgraph_version/ mcp_server/ notes.md
+PHASE 6: SHIP IT (parallel from Phase 3, ~3-4 hrs/week, 6-8 wks total)
+
+STAGE A (during Phase 3)  SECRETS + BUDGET
+  .env + .gitignore, key rotation habit, never paste keys in chat
+  Hard monthly API cap in the provider dashboard + in code
+  Alerts when daily spend passes a threshold
+
+STAGE B (during Phase 4)  DOCKER + n8n
+  Docker basics: image, container, volume, port
+  Dockerfile for your Phase 3 script, then your RAG app
+  docker-compose: app + n8n locally
+  n8n first workflow: webhook -> LLM call -> email/Sheet (human approval node)
+  n8n second: schedule -> fetch data -> AI summary -> daily digest
+
+STAGE C (during Phase 5)  VPS + CI/CD
+  Rent a cheap VPS, SSH keys only, disable password login, firewall (ufw)
+  Deploy your container, reverse proxy (Caddy/Nginx) + HTTPS
+  Secrets via env file on server, never in the image or repo
+  GitHub Actions: on push -> run tests -> build image -> deploy
+  Fail the pipeline if your 10 prompt tests or evals drop
+
+STAGE D  RELIABILITY
+  Retries with back-off, timeout on every call, fallback provider/model
+  Health-check endpoint, restart policy, log rotation
+  Backups: index files + DB, tested restore
+  Basic monitoring: uptime check + error alerts + cost dashboard
+
+STAGE E  RUNBOOK (per system, one page)
+  What it does, how to deploy, how to roll back,
+  what to check when it breaks, monthly cost, who to call
+
+EXIT CHECKLIST
+  [ ] One app live on a VPS over HTTPS
+  [ ] Push to main deploys automatically after tests pass
+  [ ] No secret in the repo or the image
+  [ ] Retries + fallback proven by killing the provider on purpose
+  [ ] Backup restore tested once
+  [ ] Runbook written
+PHASE 7: CAPSTONE (4-6 wks, NO new learning)
+
+WEEK 1  SCOPE
+  Pick the ONE business task (support triage, doc Q&A, report generator, order lookup + draft reply)
+  Write: problem, current manual cost (hours/week), success metric, "done" definition
+  List data sources, tools needed, risky actions needing approval
+  Collect 30+ real examples as your test set
+
+WEEK 2  BUILD v1
+  Reuse: tracker, RAG, agent loop, guardrails from earlier phases
+  Get the happy path working end to end on real data
+  Run the eval; record the baseline
+
+WEEK 3  HARDEN
+  Fix top failures from the eval, add guardrails, approval steps
+  Tracing on, cost cap on, retries/fallback on
+  Test with 3 real colleagues/customers' cases, collect misses
+
+WEEK 4  DEPLOY
+  Docker, VPS, CI/CD, HTTPS, secrets, backups
+  Pilot with real work, human reviews every output at first
+
+WEEK 5  MONITOR + MEASURE
+  Track: tasks handled, accuracy, approval rate, cost, time saved
+  Compute ROI: hours saved x hourly cost - monthly API/VPS cost
+  Fix new failures weekly from the trace logs
+
+WEEK 6  DOCUMENT + DECIDE
+  One-page runbook, README, known limits
+  Decide: scale it, fix it, or pick the next system
+  Optional: second capstone using the same stack
+
+EXIT CHECKLIST
+  [ ] Runs on real business data, live
+  [ ] Eval score and cost per task tracked weekly
+  [ ] ROI number written down
+  [ ] Runbook exists; someone else could operate it
+  [ ] You can explain it to your team in 5 minutes

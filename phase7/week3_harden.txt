@@ -1,0 +1,21 @@
+================================================================
+PHASE 7 - WEEK 3: HARDEN
+Estimated time : 1-2 hrs/day, 5-7 days
+Estimated cost : <$1.00
+================================================================
+
+GOAL: Fix the top failures and make bad days safe.
+
+DAY 1-2  Fix the top 5 eval failures (one change at a time, re-run eval).
+DAY 3    Turn on: tracing (JSONL), per-run cost cap, retries + fallback.
+DAY 4    Approval steps for every risky action (tier 2).
+DAY 5-6  Give 3 real colleagues/customers' cases to the system.
+         Collect every miss. Add them to the test set.
+
+CHECK: re-run the eval after each fix; keep a change only if the score
+       rises and nothing else drops.
+
+EXIT WHEN:
+  [ ] Eval score above baseline   [ ] guardrails + approvals on
+  [ ] 3 real-user cases tested, misses logged
+================================================================

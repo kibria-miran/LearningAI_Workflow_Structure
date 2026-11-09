@@ -1,0 +1,741 @@
+================================================================
+PHASE 3 - WEEK 3: STRUCTURED OUTPUT + STREAMING
+Provider : DeepSeek
+Model    : deepseek-chat
+Estimated time : 1–2 hrs/day
+Estimated cost : <$0.05 for the whole week
+================================================================
+
+GOAL: Get reliable, validated JSON from the model every time.
+      Stream responses live. Know exactly what breaks and why.
+
+----------------------------------------------------------------
+DAY 1: PROMPT-FIRST JSON — WATCH IT BREAK
+Estimated: 60 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  The simplest way to get JSON from an LLM is to ask for it
+  in the prompt: "Return your answer as JSON."
+
+  This works sometimes. But it breaks in predictable ways.
+  You need to see it break before you can fix it properly.
+  Don't skip this day — understanding the failure modes is
+  what makes Day 2 meaningful.
+
+THE 3 WAYS IT BREAKS:
+
+  BREAK 1 — Extra text before/after JSON:
+    Model returns: "Sure! Here is the JSON: {"name": "Alice"}"
+    json.loads() fails because of "Sure! Here is the JSON: "
+
+  BREAK 2 — Code fences:
+    Model returns:
+      ```json
+      {"name": "Alice"}
+      ```
+    json.loads() fails because of the backticks.
+
+  BREAK 3 — Trailing commas or comments:
+    Model returns: {"name": "Alice",}
+    Standard json.loads() fails. JSON doesn't allow trailing commas.
+
+ANALOGY:
+  Asking an LLM to "return JSON" is like asking someone to
+  "fill out this form correctly" with no form template.
+  They write the right information but in the wrong format,
+  with extra notes in the margins, or skip required fields.
+
+CODE:
+  # day1_json_prompt.py
+  from openai import OpenAI
+  import os, json
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  system = "Extract order info from text. Return as JSON with keys: order_id, customer, amount, item."
+
+  # Use exactly 3 inputs — record pass/fail for each
+  test_inputs = [
+      "Order #4521 placed by John for $45.99. Item: Blue Hoodie.",
+      "Alice bought 2 red mugs for $12 each. Reference: ORD-99.",
+      "No order here, just a complaint about shipping."
+  ]
+
+  d1_failures = 0
+  for text in test_inputs:
+      r = client.chat.completions.create(
+          model="deepseek-chat",
+          messages=[{"role": "system", "content": system}, {"role": "user", "content": text}]
+      )
+      raw = r.choices[0].message.content
+      print("RAW:", raw)
+      try:
+          json.loads(raw)
+          print("PARSED: OK")
+      except json.JSONDecodeError as e:
+          d1_failures += 1
+          print("PARSED: FAILED ->", e)
+      print("---")
+
+  print(f"Day 1 failures: {d1_failures}/3")
+  print("Write this number in notes.md. You'll compare it to Day 2.")
+
+PREDICT BEFORE YOU RUN:
+  Which of the 3 inputs do you think will cause a parse failure?
+  Will the model add code fences or extra text?
+
+VERIFY:
+  At least one input should fail (usually the "no order" case
+  causes the model to add explanation text).
+
+IF ALL 3 PARSE SUCCESSFULLY:
+  -> Your model is being cooperative today. Run it 3 more times.
+     Failures are probabilistic — they will appear eventually.
+  -> Or try a more ambiguous input to force a failure.
+
+WRITE IN NOTES.MD:
+  "Day 1 failures: X/3. Failure types observed: [list them]"
+
+EXPLAIN IT BACK:
+  "Why does json.loads() fail when the model adds a greeting?"
+
+COMMIT: git add . && git commit -m "week3 d1: prompt-first json, failures observed"
+
+----------------------------------------------------------------
+DAY 2: SCHEMA-FIRST WITH PYDANTIC — COMPARE RELIABILITY
+Estimated: 60–90 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  Instead of hoping the model returns the right format, you give
+  it an exact schema. The model knows precisely what fields are
+  expected, their types, and which are required.
+
+  Pydantic validates that the output matches the structure.
+  If it doesn't, you get a clear error — not silent bad data.
+
+  pip install pydantic
+
+ANALOGY:
+  Pydantic is a customs form at an airport. The form has specific
+  fields. You can't submit it without filling in the required ones.
+  The format is enforced, not hoped for.
+
+CODE:
+  # day2_schema_first.py
+  from openai import OpenAI
+  from pydantic import BaseModel
+  from typing import Optional
+  import os, json
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  class OrderInfo(BaseModel):
+      order_id: Optional[str] = None
+      customer: Optional[str] = None
+      amount: Optional[float] = None
+      item: Optional[str] = None
+
+  schema = OrderInfo.model_json_schema()
+
+  system = f"""Extract order info from text.
+  Return ONLY a JSON object matching this exact schema:
+  {json.dumps(schema, indent=2)}
+  Output starts with {{ and ends with }}. No code fences. No explanation."""
+
+  test_inputs = [
+      "Order #4521 placed by John for $45.99. Item: Blue Hoodie.",
+      "Alice bought 2 red mugs for $12 each. Reference: ORD-99.",
+      "No order here, just a complaint about shipping."
+  ]
+
+  d2_failures = 0
+  for text in test_inputs:
+      r = client.chat.completions.create(
+          model="deepseek-chat",
+          messages=[{"role": "system", "content": system}, {"role": "user", "content": text}]
+      )
+      raw = r.choices[0].message.content
+      try:
+          data = json.loads(raw)
+          validated = OrderInfo(**data)
+          print("VALID:", validated.model_dump())
+      except Exception as e:
+          d2_failures += 1
+          print("FAILED:", e, "| Raw:", raw[:80])
+
+  print(f"\nDay 1 failures: [your number from notes.md]")
+  print(f"Day 2 failures: {d2_failures}/3")
+  print("Schema-first is more reliable because: [write your conclusion]")
+
+PREDICT BEFORE YOU RUN:
+  Will Day 2 have fewer failures than Day 1?
+  What will the "no order" input return? (null fields? empty object?)
+
+VERIFY:
+  Day 2 should have fewer or zero failures compared to Day 1.
+
+IF DAY 2 HAS MORE FAILURES THAN DAY 1:
+  -> Your schema prompt may be too complex; simplify it
+  -> Try removing the schema JSON from the prompt and just
+     listing the fields as plain text
+
+WRITE IN NOTES.MD:
+  "Day 2 failures: X/3. Schema-first is [more/less] reliable because..."
+
+EXPLAIN IT BACK:
+  "What does Pydantic do that json.loads() alone doesn't?"
+
+COMMIT: git add . && git commit -m "week3 d2: schema-first pydantic, reliability compared"
+
+----------------------------------------------------------------
+DAY 3: RETRY ON INVALID OUTPUT (MAX 2 RETRIES)
+Estimated: 60 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  Even with schema-first prompting, the model occasionally fails.
+  The professional approach: catch the failure, tell the model
+  what went wrong, and ask it to try again. Max 2 retries.
+
+  Why max 2? If it fails 3 times, the problem is your prompt or
+  schema, not a random glitch. More retries waste money.
+
+ANALOGY:
+  Like asking a contractor to redo work that doesn't meet spec.
+  You show them exactly what's wrong: "The door doesn't fit the
+  frame." They fix it. If they fail twice more, you need a
+  different approach, not more retries.
+
+THE RETRY PATTERN:
+  1. Make the call
+  2. Try to parse/validate the output
+  3. If it fails: add the error to messages, call again
+  4. Repeat max 2 times
+  5. If still failing: return error dict
+
+CODE:
+  # day3_retry.py
+  from openai import OpenAI
+  from pydantic import BaseModel
+  from typing import Optional
+  import os, json
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  class OrderInfo(BaseModel):
+      order_id: Optional[str] = None
+      customer: Optional[str] = None
+      amount: Optional[float] = None
+      item: Optional[str] = None
+
+  def extract_with_retry(text: str, max_retries: int = 2) -> dict:
+      """
+      Extract order info with retry on parse failure.
+
+      Args:
+          text: raw input text
+          max_retries: max retry attempts after first failure
+
+      Returns:
+          dict with success (bool), data (dict|None), attempts (int), error (str|None)
+      """
+      system = "Extract order info. Return ONLY valid JSON with keys: order_id, customer, amount, item. No code fences."
+      messages = [
+          {"role": "system", "content": system},
+          {"role": "user", "content": text}
+      ]
+
+      for attempt in range(max_retries + 1):
+          r = client.chat.completions.create(model="deepseek-chat", messages=messages)
+          raw = r.choices[0].message.content
+          try:
+              data = json.loads(raw)
+              validated = OrderInfo(**data)
+              return {"success": True, "data": validated.model_dump(), "attempts": attempt + 1, "error": None}
+          except Exception as e:
+              if attempt < max_retries:
+                  messages.append({"role": "assistant", "content": raw})
+                  messages.append({"role": "user", "content": f"That output was invalid. Error: {e}. Try again. Return ONLY valid JSON."})
+              else:
+                  return {"success": False, "data": None, "attempts": attempt + 1, "error": str(e)}
+
+  result = extract_with_retry("Order #4521 placed by John for $45.99. Item: Blue Hoodie.")
+  print(result)
+
+PREDICT BEFORE YOU RUN:
+  How many attempts will a successful extraction take?
+  What will the result dict look like if all retries fail?
+
+VERIFY:
+  Successful extraction: attempts=1 (usually).
+  To test retry: temporarily add "Always add a greeting before the JSON"
+  to the system prompt. You should see attempts > 1.
+
+IF ATTEMPTS IS ALWAYS 1:
+  -> That's correct behavior. The retry only triggers on failure.
+  -> Break the prompt intentionally to test the retry path.
+
+EXPLAIN IT BACK:
+  "Why do we feed the error message back to the model instead of
+   just retrying the same request?"
+
+COMMIT: git add . && git commit -m "week3 d3: retry on invalid output"
+
+----------------------------------------------------------------
+DAY 4: BUILD EXTRACTOR.PY + 5 EXTRACTION TESTS
+Estimated: 90 min | Cost: <$0.01
+----------------------------------------------------------------
+
+CONCEPT:
+  extractor.py is a real, sellable tool. It takes messy,
+  unstructured text (emails, invoices, support tickets) and
+  returns clean, validated JSON.
+
+  This is one of the most commercially valuable LLM use cases.
+  Companies pay for this because manual data entry is expensive
+  and error-prone.
+
+REAL-WORLD USE CASES:
+  - Extract invoice data (vendor, amount, date, line items)
+  - Extract contact info from emails (name, phone, company)
+  - Extract order details from customer messages
+  - Extract key dates from contracts
+  - Extract symptoms from medical notes
+
+CODE:
+  # extractor.py
+  from openai import OpenAI
+  from pydantic import BaseModel
+  from typing import Optional
+  import os, json
+  from dotenv import load_dotenv
+  from tracker import tracked_call
+
+  load_dotenv()
+
+  class OrderExtraction(BaseModel):
+      order_id: Optional[str] = None
+      customer_name: Optional[str] = None
+      amount_usd: Optional[float] = None
+      item_description: Optional[str] = None
+      date: Optional[str] = None
+
+  SYSTEM = """You are a data extraction assistant.
+  Extract order information from the given text.
+  Return ONLY a valid JSON object with these exact keys:
+  order_id, customer_name, amount_usd, item_description, date.
+  Use null for any field not found in the text.
+  Output starts with { and ends with }. No code fences. No explanation."""
+
+  def extract_order(text: str) -> dict:
+      """
+      Extract order data from unstructured text with retry.
+
+      Args:
+          text: raw text containing order information
+
+      Returns:
+          dict with success (bool), data (dict|None), attempts (int), error (str|None)
+      """
+      messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}]
+
+      for attempt in range(3):
+          result = tracked_call(messages)
+          if not result["success"]:
+              return {"success": False, "data": None, "attempts": attempt + 1, "error": result["error"]}
+          try:
+              data = json.loads(result["content"])
+              validated = OrderExtraction(**data)
+              return {"success": True, "data": validated.model_dump(), "attempts": attempt + 1, "error": None}
+          except Exception as e:
+              if attempt < 2:
+                  messages += [
+                      {"role": "assistant", "content": result["content"]},
+                      {"role": "user", "content": f"Invalid JSON. Error: {e}. Return ONLY valid JSON."}
+                  ]
+              else:
+                  return {"success": False, "data": None, "attempts": 3, "error": str(e)}
+
+  # 5 test cases: (input_text, fields_that_must_match)
+  TEST_CASES = [
+      (
+          "Order #4521 placed by John Smith on Dec 3rd for $45.99. Item: Blue Hoodie Size L.",
+          {"order_id": "4521", "customer_name": "John Smith", "amount_usd": 45.99}
+      ),
+      (
+          "Hi, I'm Alice. I ordered the red ceramic mug (ref: ORD-99) for $24 last Tuesday.",
+          {"customer_name": "Alice", "amount_usd": 24.0}
+      ),
+      (
+          "Invoice from TechCorp: $1,250.00 for consulting. Invoice #INV-2024-007. Date: 2024-11-15.",
+          {"order_id": "INV-2024-007", "amount_usd": 1250.0}
+      ),
+      (
+          "Please cancel my order. I don't want it anymore.",
+          {"order_id": None, "amount_usd": None}
+      ),
+      (
+          "Order 8833 - Customer: Bob Lee - Product: Wireless Keyboard - Price: $79.99 - Date: Jan 5 2025",
+          {"order_id": "8833", "customer_name": "Bob Lee", "amount_usd": 79.99}
+      )
+  ]
+
+  if __name__ == "__main__":
+      passed = 0
+      for text, expected in TEST_CASES:
+          result = extract_order(text)
+          ok = result["success"] and all(result["data"].get(k) == v for k, v in expected.items())
+          if ok: passed += 1
+          status = "PASS" if ok else "FAIL"
+          print(f"{status} | attempts={result['attempts']} | {text[:55]}...")
+          if not ok:
+              print(f"     Expected: {expected}")
+              print(f"     Got:      {result['data']}")
+      print(f"\n{passed}/5 passed")
+
+PREDICT BEFORE YOU RUN:
+  Which test case do you think will be hardest for the model?
+  (hint: the invoice with $1,250.00 — comma in the number)
+
+VERIFY:
+  4–5/5 passing. If test 3 fails (amount_usd), it's the comma
+  in "$1,250.00" — the model may return 1250.0 or "1,250.00".
+  Adjust the expected value or add a note about number formatting.
+
+IF 0/5 PASS:
+  -> tracker.py budget cap may be blocking calls
+  -> Check results/usage.jsonl for errors
+
+EXPLAIN IT BACK:
+  "Why does extractor.py use tracker.py instead of calling the API directly?"
+
+COMMIT: git add extractor.py && git commit -m "week3 d4: extractor.py with 5 tests"
+
+----------------------------------------------------------------
+DAY 5: STREAMING — PRINT TOKENS LIVE
+Estimated: 45–60 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  By default, the API waits until the model finishes generating
+  the entire response, then sends it all at once.
+  With streaming, the model sends tokens as it generates them.
+
+  You've seen this on ChatGPT — text appears word by word.
+  That's streaming.
+
+WHY STREAMING MATTERS:
+  Without streaming: user waits 5 seconds, then sees full reply.
+  With streaming: user sees first word in 0.3 seconds, rest follows.
+
+  Total time is the same. But perceived speed is dramatically
+  better. For user-facing apps, this matters enormously.
+
+HOW IT WORKS:
+  The API returns a stream of "chunks" instead of one response.
+  Each chunk contains a small piece of the text (1–5 tokens).
+  You iterate over the stream and print each chunk as it arrives.
+
+NOTE ON LOGGING:
+  Streaming calls in D5 and D6 call the SDK directly (not tracker.py)
+  because streaming requires a different read loop. D6 introduces
+  tracked_stream() which logs streaming calls the same way tracker.py
+  logs regular calls. Use tracked_stream() in production code.
+
+CODE:
+  # day5_streaming.py
+  from openai import OpenAI
+  import os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  print("Streaming response:\n")
+
+  stream = client.chat.completions.create(
+      model="deepseek-chat",
+      messages=[{"role": "user", "content": "Explain how the internet works in 5 sentences."}],
+      stream=True
+  )
+
+  full_response = ""
+  for chunk in stream:
+      if chunk.choices and chunk.choices[0].delta.content:
+          token = chunk.choices[0].delta.content
+          print(token, end="", flush=True)
+          full_response += token
+
+  print(f"\n\nTotal characters: {len(full_response)}")
+
+PREDICT BEFORE YOU RUN:
+  Will the text appear all at once or word by word?
+
+VERIFY:
+  Text appears incrementally, not all at once.
+
+IF TEXT APPEARS ALL AT ONCE:
+  -> flush=True is missing from print()
+  -> Or your terminal buffers output; try running in a plain terminal
+
+EXPLAIN IT BACK:
+  "Why does streaming feel faster even though total time is the same?"
+
+COMMIT: git add . && git commit -m "week3 d5: streaming works"
+
+----------------------------------------------------------------
+DAY 6: STREAMING + USAGE LOGGING + WHAT BREAKS
+Estimated: 90 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  Streaming introduces 3 specific failure modes you must know.
+  These are not obvious until you hit them in production.
+
+FAILURE MODE 1 — MID-STREAM ERRORS LOOK LIKE NORMAL ENDINGS:
+  If the connection drops halfway through, the stream just stops.
+  No error message. The loop ends normally. You think you got
+  the full response. You didn't.
+  FIX: Track whether you received finish_reason="stop".
+       If the stream ends without it, treat it as an error.
+
+FAILURE MODE 2 — USAGE ARRIVES ONLY IN THE LAST CHUNK:
+  Token counts are only in the LAST chunk, not every chunk.
+  That last chunk often has an EMPTY choices list.
+  If you stop reading early, you miss usage data entirely.
+  FIX: Always read the stream to completion. Handle empty choices.
+
+FAILURE MODE 3 — PARTIAL OUTPUT CAN'T BE RETRIED:
+  If you got 50% of a JSON response and the stream broke,
+  you can't retry with the partial output. It's invalid.
+  You must retry the full request from scratch.
+  FIX: If stream breaks -> fall back to non-stream -> then retry.
+
+THE RULE (memorize this):
+  Stream breaks -> fall back to non-stream -> retry.
+
+CODE:
+  # day6_streaming_logged.py
+  #
+  # tracked_stream() logs streaming calls to usage.jsonl the same way
+  # tracked_call() does. Add this function to tracker.py so all calls
+  # — streaming and non-streaming — appear in the same log.
+
+  import os, time, json, hashlib
+  from datetime import datetime, timezone
+  from openai import OpenAI
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+  LOG_FILE = "results/usage.jsonl"
+
+  def tracked_stream(messages: list, model: str = "deepseek-chat", print_live: bool = True) -> dict:
+      """
+      Stream a response, log to usage.jsonl, fall back to non-stream on failure.
+
+      This function is meant to live inside tracker.py alongside tracked_call().
+      It has direct access to _calculate_cost, get_spent, DAILY_BUDGET_USD,
+      MONTHLY_BUDGET_USD, LOG_FILE, and client — no imports needed.
+
+      Args:
+          messages  : list of message dicts
+          model     : model name string
+          print_live: if True, print tokens as they arrive
+
+      Returns:
+          dict with success, content, input_tokens, output_tokens,
+          cost, latency_ms, error
+      """
+      # Budget check (same as tracked_call)
+      daily = get_spent("daily")
+      if daily >= DAILY_BUDGET_USD:
+          raise RuntimeError(f"Daily budget cap hit: ${daily:.4f}")
+      monthly = get_spent("monthly")
+      if monthly >= MONTHLY_BUDGET_USD:
+          raise RuntimeError(f"Monthly budget cap hit: ${monthly:.4f}")
+
+      prompt_hash = hashlib.sha256(json.dumps(messages).encode()).hexdigest()[:8]
+      start = time.time()
+      full_content = ""
+      finish_reason = None
+      input_tokens = 0
+      output_tokens = 0
+      error = None
+      success = True
+
+      try:
+          stream = client.chat.completions.create(
+              model=model,
+              messages=messages,
+              stream=True,
+              stream_options={"include_usage": True}  # requires openai>=1.40
+          )
+
+          for chunk in stream:
+              # Usage arrives in a final chunk that may have empty choices.
+              # Capture it regardless of whether choices is populated.
+              if hasattr(chunk, "usage") and chunk.usage:
+                  input_tokens  = chunk.usage.prompt_tokens
+                  output_tokens = chunk.usage.completion_tokens
+
+              # Only read content and finish_reason if choices is non-empty.
+              if chunk.choices:
+                  delta = chunk.choices[0].delta.content
+                  if delta:
+                      if print_live:
+                          print(delta, end="", flush=True)
+                      full_content += delta
+                  if chunk.choices[0].finish_reason:
+                      finish_reason = chunk.choices[0].finish_reason
+
+          if print_live:
+              print()  # newline after stream
+
+          if finish_reason != "stop":
+              raise RuntimeError(f"Stream ended without stop. finish_reason={finish_reason}")
+
+      except Exception as e:
+          error = str(e)
+          if print_live:
+              print(f"\nStream failed: {e}. Falling back to non-stream...")
+          try:
+              r = client.chat.completions.create(model=model, messages=messages)
+              full_content  = r.choices[0].message.content
+              input_tokens  = r.usage.prompt_tokens
+              output_tokens = r.usage.completion_tokens
+              error = None
+          except Exception as e2:
+              success = False
+              error = str(e2)
+
+      latency_ms = int((time.time() - start) * 1000)
+      cost = _calculate_cost(model, input_tokens, output_tokens)
+
+      log_entry = {
+          "timestamp": datetime.now(timezone.utc).isoformat(),
+          "model": model,
+          "prompt_hash": prompt_hash,
+          "input_tokens": input_tokens,
+          "output_tokens": output_tokens,
+          "cost": cost,
+          "latency_ms": latency_ms,
+          "success": success,
+          "error": error
+      }
+      # LOG_FILE and os.makedirs are already defined in tracker.py — no duplication needed.
+      with open(LOG_FILE, "a") as f:
+          f.write(json.dumps(log_entry) + "\n")
+
+      return {
+          "success": success,
+          "content": full_content,
+          "input_tokens": input_tokens,
+          "output_tokens": output_tokens,
+          "cost": cost,
+          "latency_ms": latency_ms,
+          "error": error
+      }
+
+
+  if __name__ == "__main__":
+      result = tracked_stream([{"role": "user", "content": "List 3 benefits of exercise."}])
+      print("\nUsage:", result["input_tokens"], "in /", result["output_tokens"], "out")
+      print("Cost:  ", result["cost"])
+      print("Check results/usage.jsonl — streaming call should appear there.")
+
+AFTER WRITING THIS:
+  Add tracked_stream() to tracker.py so it lives alongside tracked_call().
+  Both functions share _calculate_cost(), get_spent(), and LOG_FILE.
+
+PREDICT BEFORE YOU RUN:
+  Will input_tokens or output_tokens be larger?
+  Will the streaming call appear in usage.jsonl?
+
+VERIFY:
+  Text streams live. Usage shows non-zero token counts.
+  Open usage.jsonl — the streaming call is logged there.
+
+IF input_tokens AND output_tokens ARE BOTH 0:
+  -> stream_options={"include_usage": True} not supported by this provider
+  -> Usage will be 0 in the log; cost will be 0. Document this.
+
+IF YOU SEE "Stream failed":
+  -> The fallback kicked in. Check the error message.
+  -> This is expected behavior — the fallback is working correctly.
+
+EXPLAIN IT BACK:
+  "Why can't you retry a partial streaming response?"
+
+COMMIT: git add . && git commit -m "week3 d6: tracked_stream logs streaming calls to usage.jsonl"
+
+----------------------------------------------------------------
+DAY 7: COMPARE TIME TO FIRST TOKEN
+Estimated: 45 min | Cost: <$0.005
+----------------------------------------------------------------
+
+CONCEPT:
+  Time to First Token (TTFT) = delay between sending the request
+  and seeing the first word of the response.
+  This is the metric that determines how "snappy" your app feels.
+
+  Streaming: TTFT is low (0.2–0.5s). User sees text immediately.
+  Non-stream: TTFT equals total generation time (2–10s). User waits.
+
+CODE:
+  # day7_ttft.py
+  from openai import OpenAI
+  import os, time
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com", timeout=30.0)
+
+  prompt = [{"role": "user", "content": "Write a 100-word paragraph about the ocean."}]
+
+  # Non-stream
+  start = time.time()
+  r = client.chat.completions.create(model="deepseek-chat", messages=prompt)
+  non_stream_total = time.time() - start
+  print(f"Non-stream total: {non_stream_total:.2f}s (TTFT = total time)")
+
+  # Stream
+  start = time.time()
+  first_token_time = None
+  stream = client.chat.completions.create(model="deepseek-chat", messages=prompt, stream=True)
+  for chunk in stream:
+      if chunk.choices and chunk.choices[0].delta.content and first_token_time is None:
+          first_token_time = time.time() - start
+  stream_total = time.time() - start
+
+  print(f"Stream TTFT:      {first_token_time:.2f}s")
+  print(f"Stream total:     {stream_total:.2f}s")
+  print(f"Streaming shows first word {non_stream_total - first_token_time:.2f}s sooner")
+
+WRITE IN NOTES.MD:
+  Non-stream total: Xs
+  Stream TTFT: Ys
+  Stream total: Zs
+  When to use streaming: [your conclusion]
+
+WEEK 3 DELIVERABLE CHECKLIST:
+  [ ] extractor.py works on messy text, returns validated JSON
+  [ ] Retry logic works (max 2 retries, error fed back to model)
+  [ ] 5 extraction tests pass
+  [ ] Streaming prints tokens live
+  [ ] Streaming captures usage from final chunk (even if choices empty)
+  [ ] Streaming has non-stream fallback
+  [ ] TTFT comparison recorded in notes.md
+  [ ] All scripts use tracker.py for logging
+
+================================================================
+NEXT: week4_tool_calling_loop.txt
+================================================================
